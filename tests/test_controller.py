@@ -110,6 +110,26 @@ def test_delay_duration_sweep(configs, experiment):
     np.testing.assert_allclose(value / value[0], np.exp(-np.arange(3)), atol=2e-6)
 
 
+def test_long_qutrit_delay_sweep(configs, experiment):
+    from qibolab_simulator import HamiltonianConfig, QubitConfig
+
+    _, pulse, readout = experiment
+    configs["hamiltonian"] = HamiltonianConfig(
+        qubits={"alice": QubitConfig(frequency=5e9, anharmonicity=-200e6, levels=3)}
+    )
+    delay = Delay(duration=0)
+    sequence = PulseSequence([("microwave", pulse), ("microwave", delay)])
+    sequence.align(["microwave", "detector"])
+    sequence.append(("detector", readout))
+    sweep = Sweeper(
+        parameter=Parameter.duration,
+        pulses=[delay],
+        values=np.array([0, 1e4, 1e6]),
+    )
+    value = execute(configs, sequence, [[sweep]])[readout.id]
+    np.testing.assert_allclose(value, value[0], atol=1e-12)
+
+
 def test_multiple_sequences_and_empty(configs, experiment):
     sequence, _, readout = experiment
     second = Acquisition(duration=1)

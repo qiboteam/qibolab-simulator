@@ -16,6 +16,13 @@ Rabi reference. Compare identical physics and accuracy settings; the RWA is not
 an exact full lab-frame model. Measure the crossover where useful solve time
 exceeds startup, compilation, serialization, and scheduling costs.
 
+Closed-system intervals with a constant diagonal Hamiltonian use exact
+basis-state phases instead of an adaptive solver. This avoids integration work
+over long idle delays, including anharmonic multilevel phases and constant flux
+shifts, while retaining the phases needed by later pulses. It requires only the
+Hamiltonian diagonal and state vector, not a dense propagator. Driven,
+non-diagonal, time-dependent, and dissipative intervals still use QuTiP.
+
 ## Local process execution
 
 ```python

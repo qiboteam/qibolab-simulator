@@ -221,6 +221,69 @@ def test_short_pulse_after_long_idle():
     np.testing.assert_allclose(result, [0, 1], atol=1e-7)
 
 
+def test_long_qutrit_idle_preserves_populations(monkeypatch):
+    model = Model((Qubit(FREQUENCY, anharmonicity=-200e6, levels=3),))
+    pulse = rotation(1.0, duration=10)
+    prepared = evolve(model, (pulse,), (), 10, STRICT)
+    solve = qt.sesolve
+    calls = []
+
+    def wrapped(*args, **kwargs):
+        calls.append(args[2])
+        return solve(*args, **kwargs)
+
+    monkeypatch.setattr(qt, "sesolve", wrapped)
+    result = evolve(model, (pulse,), (), 1e6 + 10, STRICT)
+    np.testing.assert_allclose(result, prepared, atol=1e-12)
+    assert calls == [[0, 10]]
+    assert prepared[2] > 1e-4
+
+
+def test_long_diagonal_interval_retains_ramsey_phase():
+    width, delay, shift = 2.0, 1e6, 0.037
+    pulses = (
+        rotation(np.pi / 2, duration=width),
+        rotation(np.pi / 2, start=width + delay, duration=width),
+    )
+    flux = Flux(0, width, delay, np.array([shift]))
+    result = evolve(
+        Model((Qubit(FREQUENCY),)), pulses, (flux,), delay + 2 * width, STRICT
+    )
+    assert result[1] == pytest.approx((1 + np.cos(shift * delay)) / 2, abs=1e-8)
+
+
+def test_diagonal_interval_between_detuned_pulses():
+    width, delay, shift, detuning = 2.0, 101.0, 0.037, 7e6
+    pulses = (
+        rotation(np.pi / 2, duration=width, frequency=FREQUENCY + detuning),
+        rotation(
+            np.pi / 2,
+            start=width + delay,
+            duration=width,
+            frequency=FREQUENCY + detuning,
+        ),
+    )
+    flux = Flux(0, width, delay, np.array([shift]))
+    model = Model((Qubit(FREQUENCY),))
+    a = qt.destroy(2)
+    state = qt.basis(2, 0)
+    delta = 2 * np.pi * detuning / 1e9
+    for pulse in pulses:
+        coefficient = pulse.samples[0] * np.exp(-1j * delta * pulse.start)
+        h = coefficient * a.dag() + coefficient.conjugate() * a
+        h -= delta * a.dag() * a
+        frame = (-1j * delta * width * a.dag() * a).expm()
+        state = frame * (-1j * width * h).expm() * state
+        if pulse is pulses[0]:
+            state = (-1j * shift * delay * a.dag() * a).expm() * state
+    expected = np.abs(state.full().ravel()) ** 2
+    np.testing.assert_allclose(
+        evolve(model, pulses, (flux,), delay + 2 * width, STRICT),
+        expected,
+        atol=1e-8,
+    )
+
+
 def test_zero_time():
     model = Model((Qubit(FREQUENCY, levels=3), Qubit(FREQUENCY)))
     np.testing.assert_array_equal(evolve(model, (), (), 0), [1, 0, 0, 0, 0, 0])
@@ -264,7 +327,7 @@ def test_solver_selection_and_terminal_storage(monkeypatch, coherence):
     constant = Drive(0, 100, 20, np.full(20000, -0.01j), FREQUENCY)
     changing = Drive(0, 130, 4, np.array([-0.01j, -0.02j]), FREQUENCY)
     evolve(model, (constant, changing), (), 200, STRICT)
-    assert calls == [0, 0, 0, 1, 0]
+    assert calls == ([0, 0, 0, 1, 0] if coherence else [0, 1])
 
 
 @pytest.mark.parametrize("diagonal", [[1.1, -0.1], [0.3, 0.3], [np.nan, 1]])

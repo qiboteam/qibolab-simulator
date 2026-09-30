@@ -250,6 +250,7 @@ def evolve(
 
     All pulse boundaries restart integration. Changing sample sequences additionally
     constrain the adaptive step, but constant envelopes and idle intervals do not.
+    Closed, diagonal autonomous segments apply exact phases without integration.
     Only the terminal state is retained; operators never become dense arrays.
     """
     if not isinstance(model, Model) or not isinstance(settings, Settings):
@@ -302,6 +303,10 @@ def evolve(
                             [a, lambda t, c=coefficient: np.conjugate(c(t))],
                         ]
                     )
+        if not collapse and not terms and qt.core.data.isdiag(static.data):
+            phases = np.exp(-1j * (end - start) * static.diag())
+            state = qt.Qobj(phases[:, None] * state.full(), dims=state.dims, copy=False)
+            continue
         hamiltonian = [static, *terms] if terms else static
         options = {
             "rtol": settings.rtol,
