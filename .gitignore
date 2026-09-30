@@ -1,4 +1,6 @@
 .venv/
+.devenv/
+.direnv/
 __pycache__/
 __marimo__/
 *.py[cod]

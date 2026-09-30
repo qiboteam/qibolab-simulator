@@ -18,6 +18,11 @@ Alternatively, install into your environment with `pip install -e .` and run
 the scripts with `python`. For a caller-managed Dask cluster, use
 `uv sync --extra distributed` or `pip install -e '.[distributed]'`.
 
+With [devenv](https://devenv.sh/), run `devenv shell` to enter a Python 3.12
+environment with development, notebook, and distributed dependencies installed.
+It sets `QIBOLAB_PLATFORMS` to this checkout's `examples/platforms`, so Qibolab
+can load the `split_transmons` platform by name.
+
 ## Scope
 
 - Configurable subsystem levels, exchange coupling, drive and flux channels,
