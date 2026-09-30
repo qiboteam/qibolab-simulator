@@ -46,5 +46,11 @@ starting point on a laptop.
 
 - [Minimal platform and Rabi sweep](examples/rabi.py)
 - [End-to-end Rabi benchmark](benchmarks/rabi.py)
+- [Two coupled split-transmon qutrits](examples/platforms/split_transmons/README.md),
+  with RX/RX90/RX12 and a flux-driven CZ pulse.
+- [Interactive Qibocal calibration notebook](notebooks/calibration.py):
+  `uv sync --group notebooks`, then
+  `uv run --group notebooks marimo edit notebooks/calibration.py`
+  (Python 3.11-3.13).
 
 Licensed under Apache-2.0; see [LICENSE](LICENSE).

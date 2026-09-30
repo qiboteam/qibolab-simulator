@@ -47,7 +47,7 @@ def validate_targets(
             )
             if not targets:
                 raise ValueError("Sweepers must have at least one target")
-            for target in targets:
+            for target in dict.fromkeys(targets):
                 key = (target, name)
                 if key in seen:
                     raise ValueError(f"Duplicate sweep target for {name}")

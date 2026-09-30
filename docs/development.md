@@ -12,13 +12,57 @@ uv build
 
 `uv.lock` records the development environment. Use `uv lock` after changing
 dependencies, and commit the updated lockfile. The package uses a `src` layout,
-Hatchling for packaging, and one `dev` dependency group; no separate task runner
-is needed.
+Hatchling for packaging, a `dev` dependency group, and an optional `notebooks`
+group for Qibocal/marimo; no separate task runner is needed.
 
 Tests cover analytic dynamics, pulse timing and sweeps, Qibolab `Platform.execute`
 and runcard serialization, correlated readout, spawned workers, and a two-process
 Dask cluster. The Dask test skips when the optional `distributed` extra is absent.
 Run a focused module while iterating, for example `uv run pytest tests/test_sequence.py`.
+
+## Qibocal and marimo
+
+The [two-qutrit example](../examples/platforms/split_transmons/README.md) and
+[interactive notebook](../notebooks/calibration.py) use published Qibocal 0.2.6.
+The notebook follows the explicit phases demonstrated in
+[qiboteam/qibocal#1716](https://github.com/qiboteam/qibocal/pull/1716), without
+depending on that unmerged PR. Python 3.11-3.13 is required for this optional group:
+
+```sh
+uv sync --locked --group notebooks
+uv run --group notebooks marimo edit notebooks/calibration.py
+uv run --group notebooks pytest tests/test_qibocal.py tests/test_split_transmons.py
+uv run --group notebooks marimo check --strict notebooks/calibration.py
+uv run --group notebooks marimo export html notebooks/calibration.py \
+    -o /tmp/calibration.html -- --protocol rabi_amplitude
+```
+
+The notebook supports Rabi amplitude/length, detuned Ramsey, T1, T2, spin echo,
+qubit spectroscopy, and flux-amplitude frequency calibration. It displays raw
+data, Qibocal's fitted results and Plotly reports, and applies updates only on
+request. Updates persist across protocols in the current in-memory session;
+reset reloads the original runcard. JSON parameter overrides expose each
+protocol's own parameters rather than adding another calibration API.
+
+Coupled-mode coherence presets use short windows to limit integration cost,
+not to claim accurate coherence extraction. Full-window isolated T1/T2
+regressions compare fitted times to the model's scalar parameters. Coupling
+shifts transition frequencies: apply spectroscopy before resonant T2, and inspect
+goodness-of-fit even when Qibocal reports a successful fit. Qubit spectroscopy's
+ideal integrated signal is driven non-ground population, not a resonator response.
+No ternary discrimination, resonator calibration, RAW traces, or IQ-cloud
+classification is implied by running these protocols.
+
+Finite-shot probabilities can produce zero binomial errors. The notebook
+explicitly offers a `1/nshots` standard-error floor on a **fit-only copy** of the
+data, retaining the raw acquisition values. Failed Qibocal fits are surfaced
+rather than treated as successful updates. Platform construction preserves the
+notebook runner's signal handlers, and acquisition disconnects in a `finally`
+block.
+
+The Qibocal module skips when that optional dependency is absent. CI has a
+separate Python 3.12 job for these regressions and an executed notebook export;
+the base driver does not depend on Qibocal or marimo.
 
 The implementation has four boundaries: serializable configuration and pulse
 compilation; the Qibolab-independent numerical engine; lazy sweep expansion and

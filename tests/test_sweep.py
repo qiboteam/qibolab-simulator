@@ -35,6 +35,18 @@ def test_duplicate_sweep_target(configs, experiment):
         list(points([sequence], configs, [[sweeper], [sweeper]]))
 
 
+def test_repeated_target_in_one_sweeper(configs, experiment):
+    sequence, pulse, _ = experiment
+    sweeper = Sweeper(
+        parameter=Parameter.amplitude,
+        pulses=[pulse, pulse],
+        values=np.array([0.5]),
+    )
+    [(_, _, updated, _)] = points([sequence], configs, [[sweeper]])
+    assert updated[0][1].amplitude == 0.5
+    assert pulse.amplitude == 1
+
+
 def test_invalid_config_update_is_validated(configs, experiment):
     sweeper = Sweeper(
         parameter=Parameter.frequency, channels=["microwave"], values=np.array([-1])
