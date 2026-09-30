@@ -1,0 +1,46 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "qibolab-simulator"
+version = "0.1.0"
+description = "Rotating-frame pulse simulation for Qibolab with QuTiP"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+dependencies = [
+    "qibolab>=0.2.16,<0.3",
+    "qutip>=5.2,<6",
+    "numpy>=1.26",
+    "scipy>=1.12",
+    "pydantic>=2.7,<3",
+    "threadpoolctl>=3.5",
+]
+
+[project.optional-dependencies]
+distributed = ["dask[distributed]>=2024.1"]
+
+[dependency-groups]
+dev = ["pytest>=8", "pytest-cov>=5", "ruff>=0.11", "build>=1"]
+
+[project.urls]
+Repository = "https://github.com/qiboteam/qibolab-simulator"
+Issues = "https://github.com/qiboteam/qibolab-simulator/issues"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "UP", "B"]
+
+[tool.coverage.run]
+source = ["qibolab_simulator"]
+
+[tool.coverage.report]
+show_missing = true
