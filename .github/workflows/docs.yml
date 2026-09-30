@@ -1,0 +1,22 @@
+name: Docs
+
+on:
+  push:
+  pull_request:
+  merge_group:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  docs:
+    uses: qiboteam/workflows/.github/workflows/docs.yml@uv
+    with:
+      python-version: "3.12"
+      uv-extras: "--locked --no-dev --group notebooks"
+      output-path: docs/calibration.html

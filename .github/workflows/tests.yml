@@ -1,4 +1,4 @@
-name: CI
+name: Tests
 
 on:
   push:
@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: tests-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -32,14 +32,6 @@ jobs:
       uv-extras: "--locked --extra distributed"
     secrets: inherit
 
-  wheels:
-    uses: qiboteam/workflows/.github/workflows/wheels.yml@uv
-    with:
-      os: ubuntu-latest
-      python-version: "3.12"
-      uv-extras: "--locked --no-dev"
-      publish: false
-
   qibocal:
     runs-on: ubuntu-latest
     env:
@@ -53,5 +45,3 @@ jobs:
           python-version: "3.12"
       - run: uv sync --locked --group notebooks
       - run: uv run --no-sync pytest tests/test_split_transmons.py tests/test_qibocal.py
-      - run: uv run --no-sync marimo check --strict notebooks/calibration.py
-      - run: uv run --no-sync marimo export html notebooks/calibration.py -o "$RUNNER_TEMP/calibration.html" -- --protocol rabi_amplitude

@@ -13,7 +13,8 @@ uv build
 `uv.lock` records the development environment. Use `uv lock` after changing
 dependencies, and commit the updated lockfile. The package uses a `src` layout,
 Hatchling for packaging, a `dev` dependency group, and an optional `notebooks`
-group for Qibocal/marimo; no separate task runner is needed.
+group for Qibocal/marimo. Poe tasks provide the shared CI interface:
+`uv run --with poethepoet poe lint` and `uv run --with poethepoet poe test`.
 
 Tests cover analytic dynamics, pulse timing and sweeps, Qibolab `Platform.execute`
 and runcard serialization, correlated readout, spawned workers, and a two-process
@@ -60,9 +61,9 @@ rather than treated as successful updates. Platform construction preserves the
 notebook runner's signal handlers, and acquisition disconnects in a `finally`
 block.
 
-The Qibocal module skips when that optional dependency is absent. CI has a
-separate Python 3.12 job for these regressions and an executed notebook export;
-the base driver does not depend on Qibocal or marimo.
+The Qibocal module skips when that optional dependency is absent. The tests
+workflow has a separate Python 3.12 job for these regressions; the docs workflow
+executes the notebook export. The base driver does not depend on Qibocal or marimo.
 
 The implementation has four boundaries: serializable configuration and pulse
 compilation; the Qibolab-independent numerical engine; lazy sweep expansion and
@@ -73,17 +74,28 @@ regression, not just an execution smoke test.
 
 ## CI
 
-The [workflow](../.github/workflows/ci.yml) exercises Linux on Python 3.11/3.13
+The [tests workflow](../.github/workflows/tests.yml) exercises Linux on Python 3.11/3.13
 and macOS on Python 3.12, including process spawning and distributed execution.
-It runs on every push and pull request without labels or secrets.
+The [docs workflow](../.github/workflows/docs.yml) checks the marimo notebook and
+uploads its executed HTML export as the `documentation` artifact.
+The [wheels workflow](../.github/workflows/wheels.yml) builds the wheel and sdist
+with publishing disabled.
 
-Wheel/sdist construction reuses
-[`qiboteam/workflows`' uv workflow](https://github.com/qiboteam/workflows/blob/uv/.github/workflows/wheels.yml),
-pinned to a reviewed commit, with publishing disabled. That workflow's internal
-actions still reference its `uv` branch. The reusable test workflow expects
-`poe lint`/`poe test` tasks; the local test job avoids adding a task runner solely
-to meet that interface. Documentation is ordinary Markdown in the repository:
-there is no documentation generator or deployment pipeline to maintain.
+All three workflows run on pushes, pull requests, merge groups, and manual
+dispatches. They reuse [qiboteam/workflows](https://github.com/qiboteam/workflows)
+on its `uv` ref, like Qibolab and Qibocal. The tests workflow inherits the
+`codecov_token` Actions secret for coverage uploads, required for private
+repositories.
+
+Documentation remains Markdown in the repository, without a site generator or
+deployment pipeline. To generate the notebook documentation locally, run:
+
+```sh
+uv sync --locked --group notebooks
+uv run --no-dev --with poethepoet poe docs
+```
+
+The generated `docs/calibration.html` is ignored by Git.
 
 ## Performance
 

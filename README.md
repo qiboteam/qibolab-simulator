@@ -53,9 +53,11 @@ Run the CI tasks locally with `uv run --with poethepoet poe lint` and
 `uv run --with poethepoet poe test`. Install `--extra distributed` to include
 the Dask tests, or `--group notebooks` to include the Qibocal integration tests.
 
-CI uses the shared [qiboteam workflows](https://github.com/qiboteam/workflows)
-on the `uv` ref, like Qibolab and Qibocal. Its coverage upload requires the
-`codecov_token` GitHub Actions secret while this repository is private.
+CI has separate tests, docs, and wheels workflows using the shared
+[qiboteam workflows](https://github.com/qiboteam/workflows) on the `uv` ref,
+like Qibolab and Qibocal. The docs workflow exports the calibration notebook
+as an HTML artifact; wheel publishing is disabled. Coverage uploads require
+the `codecov_token` GitHub Actions secret while this repository is private.
 
 ## Examples and license
 

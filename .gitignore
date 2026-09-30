@@ -10,4 +10,5 @@ __marimo__/
 coverage.xml
 htmlcov/
 dist/
+docs/calibration.html
 *.egg-info/

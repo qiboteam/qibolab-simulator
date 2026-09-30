@@ -47,6 +47,10 @@ lint = [
     { cmd = "ruff format --check ." },
 ]
 lint-warnings = "ruff check --exit-zero --select C90,N,BLE,A,C4,PIE,RET,SIM,NPY,PERF,RUF ."
+docs = { sequence = [
+    { cmd = "marimo check --strict notebooks/calibration.py" },
+    { cmd = "marimo export html notebooks/calibration.py -o docs/calibration.html -- --protocol rabi_amplitude" },
+], env = { OMP_NUM_THREADS = "1", OPENBLAS_NUM_THREADS = "1", MKL_NUM_THREADS = "1" } }
 
 [tool.ruff]
 target-version = "py311"

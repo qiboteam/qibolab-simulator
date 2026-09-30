@@ -1,0 +1,23 @@
+name: Build wheels
+
+on:
+  push:
+  pull_request:
+  merge_group:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wheels-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    uses: qiboteam/workflows/.github/workflows/wheels.yml@uv
+    with:
+      os: ubuntu-latest
+      python-version: "3.12"
+      uv-extras: "--locked --no-dev"
+      publish: false
