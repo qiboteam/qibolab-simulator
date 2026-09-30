@@ -107,7 +107,8 @@ def main():
             platform.connect()
             try:
                 result = platform.execute(
-                    [sequence], [[sweeper]],
+                    [sequence],
+                    [[sweeper]],
                     averaging_mode=AveragingMode.CYCLIC,
                 )
                 print(result[acquisition.id])

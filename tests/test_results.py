@@ -2,9 +2,9 @@ from uuid import uuid4
 
 import numpy as np
 from qibolab import AveragingMode, ExecutionParameters
-from qibolab_simulator.engine import Model, Qubit
 
 from qibolab_simulator.controller import _measure
+from qibolab_simulator.engine import Model, Qubit
 from qibolab_simulator.sequence import Experiment
 
 

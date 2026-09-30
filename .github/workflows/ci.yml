@@ -3,6 +3,7 @@ name: CI
 on:
   push:
   pull_request:
+  merge_group:
   workflow_dispatch:
 
 permissions:
@@ -24,27 +25,15 @@ jobs:
             python: "3.13"
           - os: macos-latest
             python: "3.12"
-    runs-on: ${{ matrix.os }}
-    env:
-      OMP_NUM_THREADS: "1"
-      OPENBLAS_NUM_THREADS: "1"
-      MKL_NUM_THREADS: "1"
-    steps:
-      - uses: actions/checkout@v6
-      - uses: astral-sh/setup-uv@v7
-        with:
-          python-version: ${{ matrix.python }}
-          enable-cache: true
-      - run: uv sync --locked --extra distributed
-      - run: uv run --no-sync pytest --cov=qibolab_simulator --cov-report=term-missing
-      - run: uv run --no-sync python examples/rabi.py
-      - if: matrix.os == 'ubuntu-latest' && matrix.python == '3.11'
-        run: |
-          uv run --no-sync ruff check .
-          uv run --no-sync ruff format --check .
+    uses: qiboteam/workflows/.github/workflows/test.yml@uv
+    with:
+      os: ${{ matrix.os }}
+      python-version: ${{ matrix.python }}
+      uv-extras: "--locked --extra distributed"
+    secrets: inherit
 
   wheels:
-    uses: qiboteam/workflows/.github/workflows/wheels.yml@e0d551fe6b04339871058a3eb99522fb13dae176 # uv
+    uses: qiboteam/workflows/.github/workflows/wheels.yml@uv
     with:
       os: ubuntu-latest
       python-version: "3.12"
@@ -59,10 +48,9 @@ jobs:
       MKL_NUM_THREADS: "1"
     steps:
       - uses: actions/checkout@v6
-      - uses: astral-sh/setup-uv@v7
+      - uses: qiboteam/workflows/actions/uv/setup@uv
         with:
           python-version: "3.12"
-          enable-cache: true
       - run: uv sync --locked --group notebooks
       - run: uv run --no-sync pytest tests/test_split_transmons.py tests/test_qibocal.py
       - run: uv run --no-sync marimo check --strict notebooks/calibration.py

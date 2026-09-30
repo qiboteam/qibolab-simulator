@@ -34,7 +34,19 @@ Issues = "https://github.com/qiboteam/qibolab-simulator/issues"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
 addopts = "-ra"
+
+[tool.poe.tasks]
+test = { sequence = [
+    { cmd = "pytest --cov=qibolab_simulator --cov-report=xml --cov-report=term-missing" },
+    { cmd = "python examples/rabi.py" },
+], env = { OMP_NUM_THREADS = "1", OPENBLAS_NUM_THREADS = "1", MKL_NUM_THREADS = "1" } }
+lint = [
+    { cmd = "ruff check ." },
+    { cmd = "ruff format --check ." },
+]
+lint-warnings = "ruff check --exit-zero --select C90,N,BLE,A,C4,PIE,RET,SIM,NPY,PERF,RUF ."
 
 [tool.ruff]
 target-version = "py311"

@@ -8,12 +8,24 @@ are arbitrary: each simulator channel config explicitly targets a `QubitId`
 
 ```python
 from qibolab import (
-    Acquisition, AcquisitionChannel, AveragingMode, IqChannel, Parameters,
-    Platform, Pulse, PulseSequence, Qubit, Rectangular,
+    Acquisition,
+    AcquisitionChannel,
+    AveragingMode,
+    IqChannel,
+    Parameters,
+    Platform,
+    Pulse,
+    PulseSequence,
+    Qubit,
+    Rectangular,
 )
 from qibolab_simulator import (
-    DriveConfig, HamiltonianConfig, QubitConfig, ReadoutConfig,
-    SimulatorController, register_configs,
+    DriveConfig,
+    HamiltonianConfig,
+    QubitConfig,
+    ReadoutConfig,
+    SimulatorController,
+    register_configs,
 )
 
 register_configs()  # Also call before loading serialized simulator configs.
@@ -25,13 +37,15 @@ platform = Platform(
     name="one-qubit",
     instruments={"simulator": controller},
     qubits={"q": Qubit(drive="xy", acquisition="adc")},
-    parameters=Parameters(configs={
-        "hamiltonian": HamiltonianConfig(
-            qubits={"q": QubitConfig(frequency=5e9, levels=2)}
-        ),
-        "xy": DriveConfig(target="q", frequency=5e9, rabi_frequency=12.5e6),
-        "adc": ReadoutConfig(target="q"),
-    }),
+    parameters=Parameters(
+        configs={
+            "hamiltonian": HamiltonianConfig(
+                qubits={"q": QubitConfig(frequency=5e9, levels=2)}
+            ),
+            "xy": DriveConfig(target="q", frequency=5e9, rabi_frequency=12.5e6),
+            "adc": ReadoutConfig(target="q"),
+        }
+    ),
 )
 pulse = Pulse(duration=40, amplitude=1, envelope=Rectangular())
 acquisition = Acquisition(duration=100)

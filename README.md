@@ -47,6 +47,16 @@ There is no universal speedup claim: benchmark your experiment, including worker
 startup, serialization, and numerical accuracy. A single worker is the recommended
 starting point on a laptop.
 
+## Development and CI
+
+Run the CI tasks locally with `uv run --with poethepoet poe lint` and
+`uv run --with poethepoet poe test`. Install `--extra distributed` to include
+the Dask tests, or `--group notebooks` to include the Qibocal integration tests.
+
+CI uses the shared [qiboteam workflows](https://github.com/qiboteam/workflows)
+on the `uv` ref, like Qibolab and Qibocal. Its coverage upload requires the
+`codecov_token` GitHub Actions secret while this repository is private.
+
 ## Examples and license
 
 - [Minimal platform and Rabi sweep](examples/rabi.py)
