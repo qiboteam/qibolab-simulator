@@ -1804,7 +1804,7 @@ wheels = [
 [[package]]
 name = "qibocal"
 version = "0.2.7"
-source = { git = "https://github.com/qiboteam/qibocal.git?rev=3b15fde3cc229838b093a402cc5e45e3e35e92ed#3b15fde3cc229838b093a402cc5e45e3e35e92ed" }
+source = { git = "https://github.com/qiboteam/qibocal.git?rev=cdd2133f0aa44db150bd935f22a87e0da40898c5#cdd2133f0aa44db150bd935f22a87e0da40898c5" }
 dependencies = [
     { name = "click" },
     { name = "jinja2" },
@@ -1891,7 +1891,7 @@ dev = [
 ]
 notebooks = [
     { name = "marimo", marker = "python_full_version >= '3.11' and python_full_version < '3.14'", specifier = ">=0.24,<0.26" },
-    { name = "qibocal", marker = "python_full_version >= '3.11' and python_full_version < '3.14'", git = "https://github.com/qiboteam/qibocal.git?rev=3b15fde3cc229838b093a402cc5e45e3e35e92ed" },
+    { name = "qibocal", marker = "python_full_version >= '3.11' and python_full_version < '3.14'", git = "https://github.com/qiboteam/qibocal.git?rev=cdd2133f0aa44db150bd935f22a87e0da40898c5" },
 ]
 
 [[package]]

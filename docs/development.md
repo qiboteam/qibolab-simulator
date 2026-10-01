@@ -27,7 +27,7 @@ The [two-qutrit example](../examples/platforms/split_transmons/README.md) and
 [interactive notebook](../notebooks/calibration.py) use Qibocal's `Executor` and
 `BoundProtocol` from
 [qiboteam/qibocal#1716](https://github.com/qiboteam/qibocal/pull/1716).
-The optional group pins commit `3b15fde3cc229838b093a402cc5e45e3e35e92ed`
+The optional group pins commit `cdd2133f0aa44db150bd935f22a87e0da40898c5`
 of that unmerged PR. Python 3.11-3.13 is required for this optional group:
 
 ```sh
@@ -43,22 +43,32 @@ The notebook supports Rabi amplitude/length, detuned Ramsey, T1, T2, spin echo,
 qubit spectroscopy, and flux-amplitude frequency calibration. It displays raw
 data, Qibocal's fitted results and Plotly reports, and applies updates only on
 request. Updates persist across protocols in the current in-memory session;
-reset reloads the original runcard. JSON parameter overrides expose each
-protocol's own parameters rather than adding another calibration API.
+reset reloads the original runcard. Select a protocol and supply its acquisition
+parameters as JSON; the notebook displays the upstream parameter signature.
+Rabi amplitude has a runnable example sweep. Other protocols require explicit
+sweep inputs, while optional fields retain Qibocal's defaults. For a headless
+export, pass these with `--parameters`, for example:
 
-`examples/calibration.py` only prepares the platform, sweep parameters, and bound
-protocol; callers execute phases directly with Qibocal's `Executor`. The PR's
-built-in routines still take legacy arguments, so small adapters capture the
-platform/targets, accept the explicit fit error-floor option, and collect
-per-target figures/tables into a report output list. A platform adapter routes
-`Executor.update(results)` to the routine's per-target update function: the PR
-otherwise calls Qibolab's configuration-dictionary update with fit results.
-The notebook runs individual phases so updates remain opt-in; a full
-`executor(bound)` workflow also reports (when configured) and applies updates.
+```sh
+uv run --group notebooks marimo export html notebooks/calibration.py \
+    -o /tmp/ramsey.html -- --protocol ramsey \
+    --parameters '{"delay": [40, 4290, 250], "detuning": 1000000}'
+```
 
-Coupled-mode coherence presets use short windows to limit integration cost,
-not to claim accurate coherence extraction. Full-window isolated T1/T2
-regressions compare fitted times to the model's scalar parameters. Coupling
+The notebook loads the example directly with Qibocal's
+`create_calibration_platform("split_transmons")`. Its `calibration.json` supplies
+the model's initial frequencies, sweetspots, and coherence times through the
+standard platform loader. Built-in `Protocol` instances bind parameters directly,
+e.g. `protocols.rabi_amplitude(min_amp=0.01,
+max_amp=0.28, step_amp=0.016, nshots=4096, relaxation_time=0)`. A separately
+created `Executor(platform, targets=[0, 1], update=False)` runs each phase and
+returns per-target figures/tables from `executor.report(data, fitted, bound)`.
+Updates use `executor.update(fitted, bound)` on the actual session platform.
+Connections are caller-managed, and no local protocol adapters are needed.
+
+Short coherence windows limit integration cost but do not provide reliable
+coherence extraction. Full-window isolated T1/T2 regressions compare fitted times
+to the model's scalar parameters. Coupling
 shifts transition frequencies: apply spectroscopy before resonant T2, and inspect
 goodness-of-fit even when Qibocal reports a successful fit. Qubit spectroscopy's
 ideal integrated signal is driven non-ground population, not a resonator response.
@@ -68,9 +78,12 @@ classification is implied by running these protocols.
 Finite-shot probabilities can produce zero binomial errors. The notebook
 explicitly offers a `1/nshots` standard-error floor on a **fit-only copy** of the
 data, retaining the raw acquisition values. Failed Qibocal fits are surfaced
-rather than treated as successful updates. Platform construction preserves the
-notebook runner's signal handlers, and acquisition disconnects in a `finally`
-block.
+rather than treated as successful updates. Acquisition disconnects in a
+`finally` block.
+
+The current Qibolab version has a
+[headless Marimo shutdown issue](../notebooks/qibolab-platform-shutdown.md):
+HTML export writes its output but may not terminate.
 
 The Qibocal module skips when that optional dependency is absent. The tests
 workflow has a separate Python 3.12 job for these regressions; the docs workflow

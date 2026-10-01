@@ -47,6 +47,10 @@ uv sync --group notebooks
 uv run --group notebooks marimo edit notebooks/calibration.py
 ```
 
+The notebook uses `qibocal.create_calibration_platform("split_transmons")`
+directly. `calibration.json` supplies the initial qubit frequencies, sweetspots,
+and coherence times matching the simulator model.
+
 The notebook offers the original coupled model and an explicitly uncoupled mode
 for fast single-qubit experiments. Large coupled-system delays can remain
 expensive: a shared frame does not remove the frequency difference between the
