@@ -40,7 +40,9 @@ The conversion explicitly changes the physical/readout contract:
   does not simulate memory between shots.
 
 The [Qibocal marimo notebook](../../../notebooks/calibration.py) provides explicit
-acquisition, fitting, reporting, and optional update phases. Use Python 3.11-3.13:
+acquisition, fitting, reporting, and optional update phases, followed by a
+full-operation `Executor.__call__()` example on a separate platform.
+Use Python 3.11-3.13:
 
 ```sh
 uv sync --group notebooks
@@ -51,7 +53,10 @@ The notebook uses `qibocal.create_calibration_platform("split_transmons")`
 directly. `calibration.json` supplies the initial qubit frequencies, sweetspots,
 and coherence times matching the simulator model.
 
-The notebook offers the original coupled model and an explicitly uncoupled mode
-for fast single-qubit experiments. Large coupled-system delays can remain
+Edit the notebook's Python settings and protocol calls to configure experiments;
+tables and plots are the only interactive UI. Set `coupled = False` for fast
+single-qubit experiments in the staged section, or retain the original coupled
+model with `True`. The full-operation cell has its own `full_coupled` setting.
+Large coupled-system delays can remain
 expensive: a shared frame does not remove the frequency difference between the
 two transmons.

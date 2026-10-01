@@ -2,7 +2,6 @@ import json
 from copy import deepcopy
 from functools import wraps
 from pathlib import Path
-from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -13,7 +12,13 @@ mo = pytest.importorskip("marimo")
 from qibocal import Executor, create_calibration_platform, protocols  # noqa: E402
 from qibocal.auto.operation import BoundProtocol, Completed  # noqa: E402
 
-from notebooks.calibration import app  # noqa: E402
+from notebooks.calibration import (  # noqa: E402
+    acquire_protocol,
+    app,
+    bind_protocol,
+    fit_protocol,
+    run_protocol,
+)
 
 SWEEPS = {
     "rabi_amplitude": {"min_amp": 0.01, "max_amp": 0.28, "step_amp": 0.016},
@@ -108,6 +113,14 @@ def test_qibocal_notebook_phases_on_coupled_qutrits(monkeypatch, name):
                 np.all(np.isfinite(records[field])) for field in records.dtype.names
             )
     assert all(target in fitted for target in (0, 1))
+    completed = definitions["completed"]
+    assert isinstance(completed, Completed)
+    assert completed.success
+    assert completed.results is not None
+    assert set(completed.data.qubits) == {0, 1}
+    assert set(completed.reports) == {0, 1}
+    assert definitions["full_platform"] is not platform
+    assert not definitions["full_platform"].is_connected
     reports = executor.report(data, fitted, bound)
     assert set(reports) == {0, 1}
     for figures, table in reports.values():
@@ -152,7 +165,7 @@ def test_isolated_full_window_recovers_coherence(
         },
     )
     _, definitions = app.run(
-        defs={"platform": platform},
+        defs={"platform": platform, "coupled": False},
     )
     expected = getattr(platform.config("hamiltonian").qubits[0], field)
     assert getattr(definitions["fitted"], field)[0][0] == pytest.approx(
@@ -160,9 +173,8 @@ def test_isolated_full_window_recovers_coherence(
     )
 
 
-@pytest.mark.parametrize("error_floor", [True, False])
 def test_notebook_fit_error_floor_does_not_change_raw_data(
-    monkeypatch, isolated_platform, error_floor
+    monkeypatch, isolated_platform
 ):
     platform = isolated_platform
     bound = protocols.rabi_amplitude(**SWEEPS["rabi_amplitude"], nshots=4096)
@@ -178,24 +190,15 @@ def test_notebook_fit_error_floor_does_not_change_raw_data(
 
     def capture_fit(fit_data):
         assert fit_data is not data
-        assert fit_data[0].error[0] == (
-            1 / bound.parameters.nshots if error_floor else 0
-        )
-        fit_data[0].error[0] = 1 / bound.parameters.nshots
+        assert fit_data[0].error[0] == 1 / bound.parameters.nshots
         return original_fit(fit_data)
 
     monkeypatch.setattr(bound.protocol, "fit", capture_fit)
-    monkeypatch.setattr(mo, "cli_args", lambda: {"protocol": "rabi_amplitude"})
-    app.run(
-        defs={
-            "platform": platform,
-            "bound": bound,
-            "data": data,
-            "executor": executor,
-            "targets": [0],
-            "error_floor": SimpleNamespace(value=error_floor),
-            "fit_button": SimpleNamespace(value=True),
-        }
+    fit_protocol.run(
+        bound=bound,
+        data=data,
+        executor=executor,
+        targets=[0],
     )
     np.testing.assert_array_equal(data[0], raw[0])
 
@@ -203,50 +206,61 @@ def test_notebook_fit_error_floor_does_not_change_raw_data(
 @pytest.mark.parametrize(
     "parameters, message",
     [
-        ([], "must be a JSON object"),
+        ([], "must be a dictionary"),
         ({"nshots": True}, "positive integer"),
         ({"nshots": 0}, "positive integer"),
         ({"nshots": 1.5}, "positive integer"),
     ],
 )
-def test_notebook_rejects_invalid_acquisition_parameters(
-    monkeypatch, parameters, message
-):
-    monkeypatch.setattr(
-        mo,
-        "cli_args",
-        lambda: {"protocol": "rabi_amplitude", "parameters": json.dumps(parameters)},
-    )
+def test_notebook_rejects_invalid_acquisition_parameters(parameters, message):
     with pytest.raises(ValueError, match=message):
-        app.run()
+        bind_protocol.run(routine=protocols.rabi_amplitude, parameters=parameters)
 
 
-@pytest.mark.parametrize("targets", [[], [0, 0]])
+@pytest.mark.parametrize("targets", [[], [0, 0], [2]])
 def test_notebook_rejects_invalid_target_selection(targets):
     platform = create_calibration_platform("split_transmons")
     with pytest.raises(ValueError, match="distinct qutrit targets"):
-        app.run(
-            defs={
-                "platform": platform,
-                "routine": protocols.rabi_amplitude,
-                "default_parameters": "{}",
-                "settings": SimpleNamespace(
-                    value={"targets": targets, "nshots": 4096, "parameters": "{}"}
-                ),
-            }
+        bind_protocol.run(
+            platform=platform,
+            routine=protocols.rabi_amplitude,
+            parameters={},
+            targets=targets,
         )
     assert not platform.is_connected
 
 
-def test_notebook_explicit_update_applies_to_session(monkeypatch):
-    monkeypatch.setattr(mo, "cli_args", lambda: {"protocol": "rabi_amplitude"})
-    _, definitions = app.run(defs={"update_button": SimpleNamespace(value=True)})
+def test_notebook_code_settings_and_optional_update(monkeypatch, isolated_platform):
+    def unexpected_control(*args, **kwargs):
+        raise AssertionError("Notebook input controls must be configured through code")
+
+    for control in (
+        "checkbox",
+        "dropdown",
+        "dictionary",
+        "multiselect",
+        "number",
+        "text_area",
+        "run_button",
+        "button",
+    ):
+        monkeypatch.setattr(mo.ui, control, unexpected_control)
+    _, definitions = app.run(
+        defs={
+            "platform": isolated_platform,
+            "coupled": False,
+            "targets": [0],
+            "nshots": 4096,
+        }
+    )
     platform, fitted = definitions["platform"], definitions["fitted"]
-    for target in (0, 1):
-        assert (
-            platform.natives.single_qubit[target].RX[0][1].amplitude
-            == fitted.amplitude[target][0]
-        )
+    assert not platform.config("hamiltonian").couplings
+    assert set(definitions["data"].qubits) == {0}
+    assert not definitions["apply_update"]
+    assert not definitions["full_update"]
+    assert 0 in fitted
+    assert platform.natives.single_qubit[0].RX[0][1].amplitude == 0.1265
+    assert platform.natives.single_qubit[1].RX[0][1].amplitude == 0.1266
 
 
 def test_explicit_qibocal_parameters_and_selected_target_update(isolated_platform):
@@ -281,10 +295,19 @@ def test_notebook_acquisition_preserves_session_and_disconnects_on_failure(
 ):
     platform = isolated_platform
     platform.update({"configs.0/drive.frequency": 4.8e9})
-    monkeypatch.setattr(mo, "cli_args", lambda: {"protocol": "rabi_amplitude"})
-    _, definitions = app.run(defs={"platform": platform})
+    _, definitions = bind_protocol.run(
+        platform=platform,
+        routine=protocols.rabi_amplitude,
+        parameters=SWEEPS["rabi_amplitude"],
+    )
+    acquire_protocol.run(
+        platform=platform,
+        executor=definitions["executor"],
+        bound=definitions["bound"],
+    )
     assert definitions["executor"].platform is platform
     assert platform.config("0/drive").frequency == 4.8e9
+    assert not platform.is_connected
 
     @wraps(protocols.rabi_amplitude.acquisition)
     def failure(*args, **kwargs):
@@ -292,7 +315,11 @@ def test_notebook_acquisition_preserves_session_and_disconnects_on_failure(
 
     monkeypatch.setattr(protocols.rabi_amplitude, "acquisition", failure)
     with pytest.raises(RuntimeError, match="acquisition failed"):
-        app.run(defs={"platform": platform})
+        acquire_protocol.run(
+            platform=platform,
+            executor=definitions["executor"],
+            bound=definitions["bound"],
+        )
     assert not platform.is_connected
 
 
@@ -342,10 +369,23 @@ def test_notebook_failed_fit_cannot_update_platform(monkeypatch):
     fitted.amplitude.clear()
     monkeypatch.setattr(protocols.rabi_amplitude, "fit", lambda data: fitted)
     with pytest.raises(ValueError, match="no results"):
-        app.run(
-            defs={
+        fit_protocol.run(
+            **{
                 name: definitions[name]
-                for name in ("platform", "bound", "data", "executor", "targets")
+                for name in ("bound", "data", "executor", "targets")
             }
-            | {"update_button": SimpleNamespace(value=True)}
         )
+
+
+def test_notebook_full_operation_disconnects_on_failure(monkeypatch, isolated_platform):
+    def failure(self, bound):
+        raise RuntimeError("full operation failed")
+
+    monkeypatch.setattr(Executor, "__call__", failure)
+    with pytest.raises(RuntimeError, match="full operation failed"):
+        run_protocol.run(
+            bound=protocols.rabi_amplitude(**SWEEPS["rabi_amplitude"], nshots=4096),
+            create_calibration_platform=lambda name: isolated_platform,
+            targets=[0],
+        )
+    assert not isolated_platform.is_connected

@@ -24,7 +24,7 @@ Run a focused module while iterating, for example `uv run pytest tests/test_sequ
 ## Qibocal and marimo
 
 The [two-qutrit example](../examples/platforms/split_transmons/README.md) and
-[interactive notebook](../notebooks/calibration.py) use Qibocal's `Executor` and
+[calibration notebook](../notebooks/calibration.py) use Qibocal's `Executor` and
 `BoundProtocol` from
 [qiboteam/qibocal#1716](https://github.com/qiboteam/qibocal/pull/1716).
 The optional group pins commit `cdd2133f0aa44db150bd935f22a87e0da40898c5`
@@ -42,9 +42,20 @@ uv run --group notebooks marimo export html notebooks/calibration.py \
 The notebook supports Rabi amplitude/length, detuned Ramsey, T1, T2, spin echo,
 qubit spectroscopy, and flux-amplitude frequency calibration. It displays raw
 data, Qibocal's fitted results and Plotly reports, and applies updates only on
-request. Updates persist across protocols in the current in-memory session;
-reset reloads the original runcard. Select a protocol and supply its acquisition
-parameters as JSON; the notebook displays the upstream parameter signature.
+request. Configuration is code-only: edit `coupled`, `targets`, `nshots`, the
+`routine` and `parameters` dictionary, and `error_floor` in their cells.
+The first section calls `executor.acquire()`, `executor.fit()`, and
+`executor.report()` separately. The second calls `full_executor(bound)` once,
+running the entire operation and presenting its `Completed` data, results, and
+reports. The sections share protocol settings but use separate platforms so their
+updates do not interfere. There are no buttons or input widgets; marimo UI is
+used only for results presentation, and explanatory Markdown has its own cells.
+Toggles live beside the operations they control: `coupled` in platform creation,
+`error_floor` in fitting, and `apply_update` in the optional staged update.
+The full-operation cell has its own `full_coupled` and `full_update` toggles;
+coupling defaults to the staged section's setting.
+Updates persist in each in-memory session; recreating a platform reloads the
+original runcard.
 Rabi amplitude has a runnable example sweep. Other protocols require explicit
 sweep inputs, while optional fields retain Qibocal's defaults. For a headless
 export, pass these with `--parameters`, for example:
@@ -75,11 +86,12 @@ ideal integrated signal is driven non-ground population, not a resonator respons
 No ternary discrimination, resonator calibration, RAW traces, or IQ-cloud
 classification is implied by running these protocols.
 
-Finite-shot probabilities can produce zero binomial errors. The notebook
-explicitly offers a `1/nshots` standard-error floor on a **fit-only copy** of the
-data, retaining the raw acquisition values. Failed Qibocal fits are surfaced
-rather than treated as successful updates. Acquisition disconnects in a
-`finally` block.
+Finite-shot probabilities can produce zero binomial errors. The staged section
+uses a `1/nshots` standard-error floor on a **fit-only copy** of the
+data by default; set `error_floor = False` to disable it. Raw acquisition values
+are retained. The full-operation section uses Qibocal's fit directly without this
+preprocessing. Missing fit results are surfaced rather than presented as
+successful calibrations. Both execution paths disconnect in a `finally` block.
 
 The current Qibolab version has a
 [headless Marimo shutdown issue](../notebooks/qibolab-platform-shutdown.md):
