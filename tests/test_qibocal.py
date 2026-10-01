@@ -19,6 +19,10 @@ from notebooks.calibration import (  # noqa: E402
     fit_protocol,
     run_protocol,
 )
+from notebooks.calibration_helpers import (  # noqa: E402
+    prepare_fit_data,
+    require_fit_results,
+)
 
 SWEEPS = {
     "rabi_amplitude": {"min_amp": 0.01, "max_amp": 0.28, "step_amp": 0.016},
@@ -201,6 +205,21 @@ def test_notebook_fit_error_floor_does_not_change_raw_data(
         targets=[0],
     )
     np.testing.assert_array_equal(data[0], raw[0])
+
+
+def test_fit_data_without_error_floor_is_an_unmodified_copy():
+    data = protocols.rabi_amplitude.data_type(rx90=False)
+    data.data[0] = np.rec.fromarrays([[0.0, 0.1]], names=["error"])
+    fit_data = prepare_fit_data(data, 1000, error_floor=False)
+    np.testing.assert_array_equal(fit_data[0], data[0])
+    fit_data[0].error[0] = 1.0
+    assert data[0].error[0] == 0.0
+
+
+@pytest.mark.parametrize("results", [None, {}, {0: object()}])
+def test_missing_fit_results_are_rejected(results):
+    with pytest.raises(ValueError, match="Qibocal fit has no results"):
+        require_fit_results(results, [0, 1])
 
 
 @pytest.mark.parametrize(

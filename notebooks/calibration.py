@@ -6,15 +6,18 @@ app = marimo.App(width="medium")
 with app.setup(hide_code=True):
     import json
     import os
-    from copy import deepcopy
     from pathlib import Path
 
     import marimo as mo
-    import numpy as np
-    import pandas as pd
     from qibocal import Executor, create_calibration_platform, protocols
-    from qibocal.protocols.qubit_spectroscopies.qubit_spectroscopy import (
-        QubitSpectroscopyData,
+
+    from helpers import (
+        acquisition_parameters,
+        connected,
+        prepare_fit_data,
+        require_fit_results,
+        show_data,
+        show_reports,
     )
 
     os.environ.setdefault(
@@ -34,21 +37,17 @@ def _():
     mo.md("""
     # Qibocal on two split-transmon qutrits
 
-    These are **real Qibocal protocols**, not notebook-generated synthetic traces.
-    Qibocal compiles the experiment and executes the simulator through Qibolab.
-    Start with Rabi amplitude, then explore duration, coherence, and flux scans.
+    Qibocal runs real calibration protocols through the Qibolab simulator.
+    Start with Rabi amplitude, then explore duration, coherence, or flux scans.
 
-    Both the explicit **acquire -> fit -> report -> update** stages and the
-    full-operation `executor(bound)` call use the
-    `Executor` and `BoundProtocol` API from
+    Compare **acquire -> fit -> report -> update** with a single `executor(bound)`
+    call, using the `Executor` and `BoundProtocol` API from
     [qiboteam/qibocal#1716](https://github.com/qiboteam/qibocal/pull/1716).
-    The optional dependencies pin that unmerged PR. Built-in `Protocol`
-    instances bind parameters directly, independently of the executor.
+    The notebook dependencies pin that unmerged PR.
 
-    Edit the Python settings and protocol call below, then run the cells.
-    The two sections use separate in-memory platforms and share protocol settings.
-    Updates persist **within the in-memory platform session**; rerun the platform
-    creation cell to discard them. The example runcard is never modified.
+    Edit the settings below. The sections share protocol settings but use separate
+    in-memory platforms. Updates last until you rerun platform creation;
+    the example runcard is never modified.
     """)
     return
 
@@ -102,12 +101,10 @@ def _():
     the required sweep fields in `parameters`. Optional fields use Qibocal's
     defaults. CLI `--protocol` and `--parameters` overrides support headless export.
 
-    Both coupled and isolated modes simulate two qutrits.
-    For decay fits, specify roughly two decay times:
-    short windows are demonstrations, not reliable T1/T2 estimates, and long
-    coupled delays can be expensive. Increase resolution after inspecting raw
-    data. Coupling shifts resonances: fit/apply spectroscopy before resonant T2.
-    Inspect plots and uncertainties even when a fit succeeds.
+    Both modes simulate two qutrits. For reliable T1/T2 fits, scan roughly two
+    decay times; long coupled delays can be expensive. Inspect raw data before
+    increasing resolution, and check fit uncertainties. Coupling shifts
+    resonances: apply spectroscopy before resonant T2.
 
     Readout is ideal binary non-ground discrimination: resonator/RAW protocols
     and genuine three-state assignment are not supported.
@@ -117,21 +114,7 @@ def _():
 
 @app.cell
 def bind_protocol(nshots, parameters, platform, routine, targets):
-    if (
-        not targets
-        or len(set(targets)) != len(targets)
-        or any(target not in platform.qubits for target in targets)
-    ):
-        raise ValueError("Select one or both distinct qutrit targets")
-    if not isinstance(parameters, dict):
-        raise ValueError("Acquisition parameters must be a dictionary")
-    _parameters = {"nshots": nshots, "relaxation_time": 0} | parameters
-    if (
-        isinstance(_parameters["nshots"], bool)
-        or not isinstance(_parameters["nshots"], int)
-        or _parameters["nshots"] < 1
-    ):
-        raise ValueError("Protocol nshots must be a positive integer")
+    _parameters = acquisition_parameters(parameters, nshots, platform, targets)
     bound = routine(**_parameters)
     executor = Executor(platform, targets=targets, update=False)
     return bound, executor
@@ -139,42 +122,9 @@ def bind_protocol(nshots, parameters, platform, routine, targets):
 
 @app.cell
 def acquire_protocol(bound, executor, platform):
-    try:
-        platform.connect()
+    with connected(platform):
         data = executor.acquire(bound)
-    finally:
-        platform.disconnect()
     return (data,)
-
-
-@app.cell
-def _():
-    def show_data(acquired):
-        tables = {}
-        for target, records in acquired.data.items():
-            if isinstance(acquired, QubitSpectroscopyData):
-                frame = pd.DataFrame(
-                    {
-                        "frequency": acquired.drive_frequencies[target],
-                        "signal": acquired.signal(target),
-                        "phase": acquired.phase(target),
-                    }
-                )
-            else:
-                frame = pd.DataFrame(records)
-            tables[f"Raw data: {target}"] = mo.ui.table(frame)
-        return mo.accordion(tables)
-
-    def show_reports(reports):
-        outputs = {}
-        for target, (figures, table) in reports.items():
-            plots = [mo.ui.plotly(figure) for figure in figures]
-            if table:
-                plots.append(mo.Html(table))
-            outputs[f"Target {target}"] = mo.vstack(plots)
-        return mo.accordion(outputs)
-
-    return show_data, show_reports
 
 
 @app.cell
@@ -184,7 +134,7 @@ def _(bound):
 
 
 @app.cell
-def _(data, show_data):
+def _(data):
     show_data(data)
     return
 
@@ -194,9 +144,8 @@ def _():
     mo.md("""
     ### Fit
 
-    `error_floor = True` floors binomial standard errors at `1/nshots` on a
-    fit-only copy. Raw acquisition data are unchanged. Set it to `False` in the
-    fit cell to use Qibocal's unmodified fitting inputs.
+    `error_floor = True` floors binomial errors at `1/nshots` on a fit-only copy.
+    Raw data stay unchanged; set it to `False` for unmodified fitting inputs.
     """)
     return
 
@@ -204,20 +153,9 @@ def _():
 @app.cell
 def fit_protocol(bound, data, executor, targets):
     error_floor = True
-    _fit_data = deepcopy(data)
-    if error_floor:
-        for _records in _fit_data.data.values():
-            if _records.dtype.names is not None and "error" in _records.dtype.names:
-                _records["error"] = np.maximum(
-                    _records["error"], 1 / bound.parameters.nshots
-                )
+    _fit_data = prepare_fit_data(data, bound.parameters.nshots, error_floor=error_floor)
     fitted = executor.fit(_fit_data, bound)
-    _missing = [target for target in targets if target not in fitted]
-    if _missing:
-        raise ValueError(
-            f"Qibocal fit has no results for {_missing}; "
-            "inspect the acquisition data and Qibocal logs"
-        )
+    require_fit_results(fitted, targets)
     return (fitted,)
 
 
@@ -234,7 +172,7 @@ def _(bound, data, executor, fitted):
 
 
 @app.cell
-def _(reports, show_reports):
+def _(reports):
     show_reports(reports)
     return
 
@@ -244,9 +182,8 @@ def _():
     mo.md("""
     ### Optional update
 
-    Set `apply_update = True` in the next cell to apply the fit to this
-    in-memory platform only. Subsequent acquisitions use the updated parameters.
-    Rerun the platform creation cell to reload the original runcard.
+    Set `apply_update = True` to use the fit in subsequent acquisitions on this
+    platform. Rerun platform creation to restore the original runcard.
     """)
     return
 
@@ -264,15 +201,12 @@ def _():
     mo.md("""
     ## 2. Full operation with `Executor.__call__()`
 
-    `full_executor(bound)` acquires, fits, reports, and optionally updates in one
-    call, returning a `Completed` object. This example uses a fresh platform and
-    the same protocol parameters and targets as above.
+    `full_executor(bound)` runs all stages and returns a `Completed` object.
+    This section uses a fresh platform with the same protocol and targets.
 
-    `full_coupled` defaults to the staged section's `coupled` setting; override it
-    for a different model. Set `full_update = True` to enable automatic updates.
-    Both settings are in the execution cell. This path uses Qibocal's fitting
-    inputs directly, without the staged example's fit-only error floor.
-    Inspect results and uncertainties.
+    Override `full_coupled` for a different model, or set `full_update = True`
+    for automatic updates. This path uses Qibocal's fitting inputs directly,
+    without the error floor.
     """)
     return
 
@@ -285,23 +219,14 @@ def run_protocol(bound, coupled, targets):
     if not full_coupled:
         full_platform.update({"configs.hamiltonian.couplings": []})
     full_executor = Executor(full_platform, targets=targets, update=full_update)
-    try:
-        full_platform.connect()
+    with connected(full_platform):
         completed = full_executor(bound)
-    finally:
-        full_platform.disconnect()
-    if completed.results is None or any(
-        target not in completed.results for target in targets
-    ):
-        raise ValueError(
-            "Qibocal full operation has missing fit results; "
-            "inspect the acquisition data and Qibocal logs"
-        )
+    require_fit_results(completed.results, targets)
     return (completed,)
 
 
 @app.cell
-def _(completed, show_data):
+def _(completed):
     show_data(completed.data)
     return
 
@@ -313,7 +238,7 @@ def _(completed):
 
 
 @app.cell
-def _(completed, show_reports):
+def _(completed):
     if completed.reports is not None:
         show_reports(completed.reports)
     return

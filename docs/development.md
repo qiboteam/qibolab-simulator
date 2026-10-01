@@ -76,6 +76,9 @@ created `Executor(platform, targets=[0, 1], update=False)` runs each phase and
 returns per-target figures/tables from `executor.report(data, fitted, bound)`.
 Updates use `executor.update(fitted, bound)` on the actual session platform.
 Connections are caller-managed, and no local protocol adapters are needed.
+Display helpers, settings validation, fit-data preparation, and connection
+cleanup live in the local `notebooks/calibration_helpers/` package, keeping
+the notebook focused on settings and Qibocal calls.
 
 Short coherence windows limit integration cost but do not provide reliable
 coherence extraction. Full-window isolated T1/T2 regressions compare fitted times
