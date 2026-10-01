@@ -12,3 +12,4 @@ htmlcov/
 dist/
 docs/calibration.html
 *.egg-info/
+var/

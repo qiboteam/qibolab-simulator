@@ -10,12 +10,12 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
 dependencies = [
-    "qibolab>=0.2.16,<0.3",
-    "qutip>=5.2,<6",
-    "numpy>=1.26",
-    "scipy>=1.12",
-    "pydantic>=2.7,<3",
-    "threadpoolctl>=3.5",
+  "qibolab>=0.2.16,<0.3",
+  "qutip>=5.2,<6",
+  "numpy>=1.26",
+  "scipy>=1.12",
+  "pydantic>=2.7,<3",
+  "threadpoolctl>=3.5",
 ]
 
 [project.optional-dependencies]
@@ -24,8 +24,8 @@ distributed = ["dask[distributed]>=2024.1"]
 [dependency-groups]
 dev = ["pytest>=8", "pytest-cov>=5", "ruff>=0.11", "build>=1"]
 notebooks = [
-    "qibocal @ git+https://github.com/qiboteam/qibocal.git@cdd2133f0aa44db150bd935f22a87e0da40898c5",
-    "marimo>=0.24,<0.26",
+  "qibocal @ git+https://github.com/qiboteam/qibocal.git@feat/new-protocol-interface-1456",
+  "marimo>=0.24,<0.26",
 ]
 
 [tool.uv.dependency-groups]
@@ -42,17 +42,14 @@ addopts = "-ra"
 
 [tool.poe.tasks]
 test = { sequence = [
-    { cmd = "pytest --cov=qibolab_simulator --cov-report=xml --cov-report=term-missing" },
-    { cmd = "python examples/rabi.py" },
+  { cmd = "pytest --cov=qibolab_simulator --cov-report=xml --cov-report=term-missing" },
+  { cmd = "python examples/rabi.py" },
 ], env = { OMP_NUM_THREADS = "1", OPENBLAS_NUM_THREADS = "1", MKL_NUM_THREADS = "1" } }
-lint = [
-    { cmd = "ruff check ." },
-    { cmd = "ruff format --check ." },
-]
+lint = [{ cmd = "ruff check ." }, { cmd = "ruff format --check ." }]
 lint-warnings = "ruff check --exit-zero --select C90,N,BLE,A,C4,PIE,RET,SIM,NPY,PERF,RUF ."
 docs = { sequence = [
-    { cmd = "marimo check --strict notebooks/calibration.py" },
-    { cmd = "marimo export html notebooks/calibration.py -o docs/calibration.html -- --protocol rabi_amplitude" },
+  { cmd = "marimo check --strict notebooks/calibration.py" },
+  { cmd = "marimo export html notebooks/calibration.py -o docs/calibration.html -- --protocol rabi_amplitude" },
 ], env = { OMP_NUM_THREADS = "1", OPENBLAS_NUM_THREADS = "1", MKL_NUM_THREADS = "1" } }
 
 [tool.ruff]

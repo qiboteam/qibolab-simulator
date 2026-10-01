@@ -1804,7 +1804,7 @@ wheels = [
 [[package]]
 name = "qibocal"
 version = "0.2.7"
-source = { git = "https://github.com/qiboteam/qibocal.git?rev=cdd2133f0aa44db150bd935f22a87e0da40898c5#cdd2133f0aa44db150bd935f22a87e0da40898c5" }
+source = { git = "https://github.com/qiboteam/qibocal.git?rev=feat%2Fnew-protocol-interface-1456#15a6c5f9bfcc980e18a0791865c1173ec56f7121" }
 dependencies = [
     { name = "click" },
     { name = "jinja2" },
@@ -1891,7 +1891,7 @@ dev = [
 ]
 notebooks = [
     { name = "marimo", marker = "python_full_version >= '3.11' and python_full_version < '3.14'", specifier = ">=0.24,<0.26" },
-    { name = "qibocal", marker = "python_full_version >= '3.11' and python_full_version < '3.14'", git = "https://github.com/qiboteam/qibocal.git?rev=cdd2133f0aa44db150bd935f22a87e0da40898c5" },
+    { name = "qibocal", marker = "python_full_version >= '3.11' and python_full_version < '3.14'", git = "https://github.com/qiboteam/qibocal.git?rev=feat%2Fnew-protocol-interface-1456" },
 ]
 
 [[package]]

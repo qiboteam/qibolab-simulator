@@ -6,30 +6,16 @@ app = marimo.App(width="medium")
 with app.setup(hide_code=True):
     import json
     import os
+    import shutil
     from pathlib import Path
 
     import marimo as mo
+    from helpers import show_data, show_reports
     from qibocal import Executor, create_calibration_platform, protocols
 
-    from helpers import (
-        acquisition_parameters,
-        connected,
-        prepare_fit_data,
-        require_fit_results,
-        show_data,
-        show_reports,
+    os.environ["QIBOLAB_PLATFORMS"] = str(
+        Path(__file__).resolve().parents[1] / "examples" / "platforms"
     )
-
-    os.environ.setdefault(
-        "QIBOLAB_PLATFORMS",
-        str(Path(__file__).resolve().parents[1] / "examples" / "platforms"),
-    )
-
-
-@app.cell(hide_code=True)
-def _():
-    cli = mo.cli_args()
-    return (cli,)
 
 
 @app.cell(hide_code=True)
@@ -38,25 +24,33 @@ def _():
     # Qibocal on two split-transmon qutrits
 
     Qibocal runs real calibration protocols through the Qibolab simulator.
-    Start with Rabi amplitude, then explore duration, coherence, or flux scans.
+    Explore Ramsey in individual stages and qubit flux in a full operation.
 
     Compare **acquire -> fit -> report -> update** with a single `executor(bound)`
     call, using the `Executor` and `BoundProtocol` API from
     [qiboteam/qibocal#1716](https://github.com/qiboteam/qibocal/pull/1716).
-    The notebook dependencies pin that unmerged PR.
+    The notebook dependencies track that unmerged PR's branch.
 
-    Edit the settings below. The sections share protocol settings but use separate
-    in-memory platforms. Updates last until you rerun platform creation;
-    the example runcard is never modified.
+    Edit the settings below. Both sections share an executor and in-memory
+    platform. Updates last until you rerun platform creation; the example
+    runcard is never modified. Calibration output is written to `var/report/`.
     """)
     return
 
 
 @app.cell
-def _():
-    targets = [0, 1]
-    nshots = 1000
-    return nshots, targets
+def create_executor():
+    path = "var/report/"
+    coupled = True
+
+    platform = create_calibration_platform("split_transmons")
+    if not coupled:
+        platform.update({"configs.hamiltonian.couplings": []})
+
+    if Path(path).exists():
+        shutil.rmtree(path)
+    executor = Executor.create(platform=platform, path=path, update=False)
+    return (executor,)
 
 
 @app.cell(hide_code=True)
@@ -71,34 +65,12 @@ def _():
     return
 
 
-@app.cell
-def _():
-    coupled = True
-    platform = create_calibration_platform("split_transmons")
-    if not coupled:
-        platform.update({"configs.hamiltonian.couplings": []})
-    return coupled, platform
-
-
-@app.cell
-def _(cli):
-    routine = protocols.rabi_amplitude
-    parameters = {"min_amp": 0.01, "max_amp": 0.28, "step_amp": 0.016}
-    if "protocol" in cli:
-        routine = getattr(protocols, cli["protocol"])
-        if routine is not protocols.rabi_amplitude:
-            parameters = {}
-    if "parameters" in cli:
-        parameters = json.loads(cli["parameters"])
-    return parameters, routine
-
-
 @app.cell(hide_code=True)
 def _():
     mo.md("""
     Use `protocols.rabi_amplitude`, `rabi_length`, `ramsey`, `t1`, `t2`,
     `spin_echo`, `qubit_spectroscopy`, or `flux_amplitude_frequency` and supply
-    the required sweep fields in `parameters`. Optional fields use Qibocal's
+    the required sweep fields in the protocol call. Optional fields use Qibocal's
     defaults. CLI `--protocol` and `--parameters` overrides support headless export.
 
     Both modes simulate two qutrits. For reliable T1/T2 fits, scan roughly two
@@ -113,17 +85,25 @@ def _():
 
 
 @app.cell
-def bind_protocol(nshots, parameters, platform, routine, targets):
-    _parameters = acquisition_parameters(parameters, nshots, platform, targets)
-    bound = routine(**_parameters)
-    executor = Executor(platform, targets=targets, update=False)
-    return bound, executor
+def bind_protocol():
+    bound = protocols.ramsey(delay=(10, 1000, 100))
+    _cli = mo.cli_args()
+    if "protocol" in _cli:
+        _routine = getattr(protocols, _cli["protocol"])
+        _parameters = (
+            {"min_amp": 0.01, "max_amp": 0.28, "step_amp": 0.016}
+            if _routine is protocols.rabi_amplitude
+            else {}
+        )
+        _parameters.update(json.loads(_cli.get("parameters", "{}")))
+        bound = _routine(**_parameters)
+    return (bound,)
 
 
 @app.cell
-def acquire_protocol(bound, executor, platform):
-    with connected(platform):
-        data = executor.acquire(bound)
+def acquire_protocol(bound, executor):
+    with executor:
+        data = executor.acquire(bound, nshots=1000, targets=[0, 1])
     return (data,)
 
 
@@ -144,30 +124,22 @@ def _():
     mo.md("""
     ### Fit
 
-    `error_floor = True` floors binomial errors at `1/nshots` on a fit-only copy.
-    Raw data stay unchanged; set it to `False` for unmodified fitting inputs.
+    Pass the acquisition data directly to Qibocal's fit, then inspect the fitted
+    results and uncertainties before applying an update.
     """)
     return
 
 
 @app.cell
-def fit_protocol(bound, data, executor, targets):
-    error_floor = True
-    _fit_data = prepare_fit_data(data, bound.parameters.nshots, error_floor=error_floor)
-    fitted = executor.fit(_fit_data, bound)
-    require_fit_results(fitted, targets)
+def fit_protocol(bound, data, executor):
+    fitted = executor.fit(data, bound, targets=[0, 1])
+    fitted
     return (fitted,)
 
 
 @app.cell
-def _(fitted):
-    fitted
-    return
-
-
-@app.cell
 def _(bound, data, executor, fitted):
-    reports = executor.report(data, fitted, bound)
+    reports = executor.report(data, fitted, bound, targets=[0, 1])
     return (reports,)
 
 
@@ -192,7 +164,7 @@ def _():
 def _(bound, executor, fitted):
     apply_update = False
     if apply_update:
-        executor.update(fitted, bound)
+        executor.update(fitted, bound, targets=[0, 1])
     return
 
 
@@ -201,27 +173,32 @@ def _():
     mo.md("""
     ## 2. Full operation with `Executor.__call__()`
 
-    `full_executor(bound)` runs all stages and returns a `Completed` object.
-    This section uses a fresh platform with the same protocol and targets.
-
-    Override `full_coupled` for a different model, or set `full_update = True`
-    for automatic updates. This path uses Qibocal's fitting inputs directly,
-    without the error floor.
+    `executor(bound)` runs all stages, including report generation, and returns
+    a `Completed` object.
+    This section reuses the executor and platform from section 1 for a qubit
+    flux scan on target 0. Set `update = True` in executor creation for automatic
+    updates. A CLI `--protocol` override runs the bound protocol in both sections.
     """)
     return
 
 
 @app.cell
-def run_protocol(bound, coupled, targets):
-    full_coupled = coupled
-    full_update = False
-    full_platform = create_calibration_platform("split_transmons")
-    if not full_coupled:
-        full_platform.update({"configs.hamiltonian.couplings": []})
-    full_executor = Executor(full_platform, targets=targets, update=full_update)
-    with connected(full_platform):
-        completed = full_executor(bound)
-    require_fit_results(completed.results, targets)
+def run_protocol(bound, executor):
+    _protocol = (
+        bound
+        if "protocol" in mo.cli_args()
+        else protocols.qubit_flux(
+            frequency=("linspace", 4.78e9, 4.83e9, 40),
+            bias=("linspace", 0.35, 0.46, 30),
+            drive_duration=1000,
+        )
+    )
+    with executor:
+        completed = executor(
+            _protocol,
+            nshots=4096,
+            targets=[0],
+        )
     return (completed,)
 
 
@@ -238,9 +215,8 @@ def _(completed):
 
 
 @app.cell
-def _(completed):
-    if completed.reports is not None:
-        show_reports(completed.reports)
+def display_completed_reports(completed):
+    show_reports(completed.reports)
     return
 
 
