@@ -8,10 +8,15 @@ app = marimo.App(width="medium")
 def _():
     import json
     import sys
+    from dataclasses import replace
     from pathlib import Path
+    from time import perf_counter
 
     import marimo as mo
     import pandas as pd
+    from qibocal.protocols.qubit_spectroscopies.qubit_spectroscopy import (
+        QubitSpectroscopyData,
+    )
 
     _root = Path(__file__).resolve().parents[1]
     if str(_root) not in sys.path:
@@ -19,25 +24,22 @@ def _():
 
     from examples.calibration import (
         PROTOCOLS,
-        acquire,
-        apply_update,
+        bind,
         calibration_platform,
-        fit,
-        report,
     )
 
     cli = mo.cli_args()
     return (
         PROTOCOLS,
-        acquire,
-        apply_update,
+        QubitSpectroscopyData,
+        bind,
         calibration_platform,
         cli,
-        fit,
         json,
         mo,
         pd,
-        report,
+        perf_counter,
+        replace,
     )
 
 
@@ -50,10 +52,11 @@ def _(mo):
     Qibocal compiles the experiment and executes the simulator through Qibolab.
     Start with Rabi amplitude, then explore duration, coherence, and flux scans.
 
-    The explicit **acquire -> fit -> report -> update** stages are inspired by
+    The explicit **acquire -> fit -> report -> update** stages use the
+    `Executor` and `BoundProtocol` API from
     [qiboteam/qibocal#1716](https://github.com/qiboteam/qibocal/pull/1716).
-    That PR is unmerged; this notebook uses the published Qibocal **0.2.6**
-    routine interface, not its proposed parameter-binding/executor API.
+    The optional dependencies pin that unmerged PR. Small adapters bind the
+    built-in routines' legacy platform/target arguments and collect reports.
 
     First create a platform session, then acquire protocols against it. Updates
     persist across protocols **within that session**; reset to discard them.
@@ -139,7 +142,7 @@ def _(PROTOCOLS, mo, platform):
 
 
 @app.cell
-def _(acquire, cli, json, mo, platform, settings):
+def _(bind, cli, json, mo, perf_counter, platform, settings):
     _settings = settings.value
     if _settings is None and "protocol" in cli:
         _settings = {
@@ -154,7 +157,7 @@ def _(acquire, cli, json, mo, platform, settings):
     _overrides = json.loads(_settings["overrides"])
     if not isinstance(_overrides, dict):
         raise ValueError("Parameter overrides must be a JSON object")
-    session = acquire(
+    executor, bound = bind(
         _settings["protocol"],
         targets=_settings["targets"],
         points=_settings["points"],
@@ -162,63 +165,82 @@ def _(acquire, cli, json, mo, platform, settings):
         full_window=_settings["full_window"],
         platform=platform,
         overrides=_overrides,
+        reports=[],
     )
+    _start = perf_counter()
+    data = executor.acquire(bound)
+    acquisition_seconds = perf_counter() - _start
     mo.md(
-        f"**{session.name}** acquired on {session.targets} "
-        f"in **{session.seconds:.3f} s**. The controller has been disconnected."
+        f"**{_settings['protocol']}** acquired on {_settings['targets']} "
+        f"in **{acquisition_seconds:.3f} s**. The controller has been disconnected."
     )
-    return (session,)
+    return bound, data, executor
 
 
 @app.cell
-def _(mo, pd, session):
+def _(QubitSpectroscopyData, bound, data, mo, pd):
+    _tables = {}
+    for _target, _records in data.data.items():
+        if isinstance(data, QubitSpectroscopyData):
+            _frame = pd.DataFrame(
+                {
+                    "frequency": data.drive_frequencies[_target],
+                    "signal": data.signal(_target),
+                    "phase": data.phase(_target),
+                }
+            )
+        else:
+            _frame = pd.DataFrame(_records)
+        _tables[f"Raw data: {_target}"] = mo.ui.table(_frame)
     mo.accordion(
         {
             "Protocol parameters": mo.md(
-                f"```text\n{session.parameters!r}\n```\n\n"
-                f"nshots={session.parameters.nshots}; "
-                f"relaxation_time={session.parameters.relaxation_time} ns"
+                f"```text\n{bound.parameters!r}\n```\n\n"
+                f"nshots={bound.parameters.nshots}; "
+                f"relaxation_time={bound.parameters.relaxation_time} ns"
             ),
         }
-        | {
-            f"Raw data: {target}": mo.ui.table(pd.DataFrame(records))
-            for target, records in session.data.data.items()
-        }
+        | _tables
     )
     return
 
 
 @app.cell
-def _(mo, session):
+def _(data, mo):
     error_floor = mo.ui.checkbox(
         value=True,
         label="Floor binomial standard errors at 1/nshots on a fit-only copy",
     )
-    fit_button = mo.ui.run_button(label=f"Fit {session.name} data with Qibocal")
+    fit_button = mo.ui.run_button(label=f"Fit {type(data).__name__} with Qibocal")
     mo.vstack([error_floor, fit_button])
     return error_floor, fit_button
 
 
 @app.cell
-def _(cli, error_floor, fit, fit_button, mo, session):
+def _(bound, cli, data, error_floor, executor, fit_button, mo, perf_counter, replace):
     mo.stop(
         not fit_button.value and "protocol" not in cli,
         mo.md("Inspect the data, then run the fit."),
     )
-    fitted = fit(session, error_floor=error_floor.value)
+    fit_bound = replace(bound, fitpars=error_floor.value)
+    _start = perf_counter()
+    fitted = executor.fit(data, fit_bound)
+    _seconds = perf_counter() - _start
     mo.md(
         f"### Qibocal fit results\n\n```text\n{fitted!r}\n```\n\n"
-        f"Fit time: **{session.fit_seconds:.3f} s**. "
-        f"Error floor applied to **{session.regularized_points}** points; "
+        f"Fit time: **{_seconds:.3f} s**. "
+        f"Error floor: **{'enabled' if error_floor.value else 'disabled'}**; "
         "the raw acquisition data are unchanged."
     )
     return (fitted,)
 
 
 @app.cell
-def _(fitted, mo, report, session):
+def _(bound, data, executor, fitted, mo, replace):
+    _reports = []
+    executor.report(data, fitted, replace(bound, reportpars=_reports))
     _outputs = []
-    for _target, _figures, _table in report(session, fitted):
+    for _target, _figures, _table in _reports:
         _outputs.append(mo.md(f"### Target {_target}"))
         _outputs.extend(mo.ui.plotly(_figure) for _figure in _figures)
         if _table:
@@ -237,9 +259,9 @@ def _(fitted, mo):
 
 
 @app.cell
-def _(apply_update, fitted, mo, session, update_button):
+def _(executor, fitted, mo, update_button):
     mo.stop(not update_button.value, mo.md("Updates are opt-in."))
-    apply_update(session, fitted)
+    executor.update(fitted)
     mo.md("""
     Applied Qibocal's update to this **in-memory platform only**.
     Subsequent protocols use these updated parameters; reset the platform to

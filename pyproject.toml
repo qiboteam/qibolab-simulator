@@ -23,7 +23,10 @@ distributed = ["dask[distributed]>=2024.1"]
 
 [dependency-groups]
 dev = ["pytest>=8", "pytest-cov>=5", "ruff>=0.11", "build>=1"]
-notebooks = ["qibocal==0.2.6", "marimo>=0.24,<0.26"]
+notebooks = [
+    "qibocal @ git+https://github.com/qiboteam/qibocal.git@3b15fde3cc229838b093a402cc5e45e3e35e92ed",
+    "marimo>=0.24,<0.26",
+]
 
 [tool.uv.dependency-groups]
 notebooks = { requires-python = ">=3.11,<3.14" }

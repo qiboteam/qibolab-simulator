@@ -1,16 +1,19 @@
-"""Explicit, in-memory Qibocal phases shared by the notebook and regressions."""
+"""Bind Qibocal's built-in routines to its direct protocol executor."""
 
 import signal
 from copy import deepcopy
 from dataclasses import dataclass
 
 import numpy as np
-from qibocal import protocols
-from qibocal.auto.operation import Data, Parameters, Protocol, Results
+from plotly.graph_objects import Figure
+from qibocal import Executor, protocols
+from qibocal.auto.operation import BoundProtocol, Data, Parameters, Protocol, Results
 from qibocal.calibration import CalibrationPlatform
 from qibocal.calibration.calibration import Calibration, QubitCalibration
 
 from examples.platforms.split_transmons import create_platform
+
+Report = tuple[int, list[Figure], str]
 
 PROTOCOLS: dict[str, Protocol] = {
     name: getattr(protocols, name)
@@ -137,19 +140,31 @@ def parameters(
 
 
 @dataclass
-class Session:
-    name: str
+class UpdatePlatform:
+    """Bridge Executor.update(results) to a routine's per-target update."""
+
     platform: CalibrationPlatform
+    routine: Protocol
     targets: tuple[int, ...]
-    parameters: Parameters
-    data: Data
-    seconds: float
-    fit_data: Data | None = None
-    fit_seconds: float | None = None
-    regularized_points: int = 0
+
+    def update(self, results: Results) -> None:
+        require_results(results, self.targets)
+        if self.routine.update is None:
+            raise ValueError("Protocol does not support updating")
+        for target in self.targets:
+            self.routine.update(results, self.platform, target=target)
 
 
-def acquire(
+def require_results(results: Results, targets: tuple[int, ...]) -> None:
+    missing = [target for target in targets if target not in results]
+    if missing:
+        raise ValueError(
+            f"Qibocal fit has no results for {missing}; "
+            "inspect the acquisition data and Qibocal logs"
+        )
+
+
+def bind(
     name: str,
     *,
     targets=(0, 1),
@@ -159,7 +174,15 @@ def acquire(
     full_window: bool = False,
     platform: CalibrationPlatform | None = None,
     overrides: dict[str, object] | None = None,
-) -> Session:
+    error_floor: bool = True,
+    reports: list[Report] | None = None,
+) -> tuple[Executor, BoundProtocol]:
+    """Adapt legacy routine signatures without executing any protocol phases.
+
+    The PR has not migrated built-in routines yet. Acquisition captures the
+    hardware and targets; report outputs are collected in the supplied list.
+    Updates remain explicit through Executor.update and never write a runcard.
+    """
     if name not in PROTOCOLS:
         raise ValueError(f"Unknown Qibocal protocol: {name!r}")
     targets = tuple(targets)
@@ -190,47 +213,44 @@ def acquire(
         or params.nshots < 1
     ):
         raise ValueError("Protocol nshots must be a positive integer")
-    platform.connect()
-    try:
-        data, seconds = PROTOCOLS[name].acquisition(params, platform, list(targets))
-    finally:
-        platform.disconnect()
-    return Session(name, platform, targets, params, data, seconds)
+    routine = PROTOCOLS[name]
 
+    def acquisition(parameters: Parameters) -> Data:
+        platform.connect()
+        try:
+            return routine.acquisition(parameters, platform, list(targets))
+        finally:
+            platform.disconnect()
 
-def fit(session: Session, *, error_floor: bool = True) -> Results:
-    """Use Qibocal's fit, optionally flooring finite-shot errors on a data copy."""
-    data = deepcopy(session.data)
-    regularized = 0
-    if error_floor:
-        for records in data.data.values():
-            if "error" in records.dtype.names:
-                floor = 1 / session.parameters.nshots
-                regularized += np.count_nonzero(records["error"] < floor)
-                records["error"] = np.maximum(records["error"], floor)
-    fitted, seconds = PROTOCOLS[session.name].fit(data)
-    missing = [target for target in session.targets if target not in fitted]
-    if missing:
-        raise RuntimeError(
-            f"Qibocal {session.name} fit failed for {missing}; "
-            "inspect the acquisition data and Qibocal logs"
-        )
-    session.fit_data = data
-    session.fit_seconds = seconds
-    session.regularized_points = regularized
-    return fitted
+    def fit(data: Data, floor_errors: bool | None) -> Results:
+        if routine.fit is None:
+            raise ValueError("Protocol does not support fitting")
+        fit_data = deepcopy(data)
+        if floor_errors:
+            for records in fit_data.data.values():
+                if records.dtype.names is not None and "error" in records.dtype.names:
+                    records["error"] = np.maximum(records["error"], 1 / params.nshots)
+        fitted = routine.fit(fit_data)
+        require_results(fitted, targets)
+        return fitted
 
+    def report(data: Data, fitted: Results, outputs: list[Report] | None) -> None:
+        if routine.report is None:
+            raise ValueError("Protocol does not support reporting")
+        if outputs is None:
+            raise ValueError("Supply a report output list when binding the protocol")
+        for target in targets:
+            figures, table = routine.report(data, target=target, fit=fitted)
+            outputs.append((target, figures, table))
 
-def report(session: Session, fitted: Results):
-    data = session.fit_data if session.fit_data is not None else session.data
-    for target in session.targets:
-        figures, table = PROTOCOLS[session.name].report(data, target=target, fit=fitted)
-        yield target, figures, table
+    def update(fitted: Results, platform: CalibrationPlatform) -> None:
+        UpdatePlatform(platform, routine, targets).update(fitted)
 
-
-def apply_update(session: Session, fitted: Results) -> None:
-    missing = [target for target in session.targets if target not in fitted]
-    if missing:
-        raise ValueError(f"Cannot update targets with missing fit results: {missing}")
-    for target in session.targets:
-        PROTOCOLS[session.name].update(fitted, session.platform, target=target)
+    protocol = Protocol(
+        acquisition=acquisition,
+        fit=fit if routine.fit is not None else None,
+        report=report if reports is not None else None,
+        update=update if routine.update is not None else None,
+    )
+    bound = protocol(pars=params, fit=error_floor, report=reports)
+    return Executor(UpdatePlatform(platform, routine, targets)), bound

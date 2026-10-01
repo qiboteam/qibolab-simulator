@@ -24,10 +24,11 @@ Run a focused module while iterating, for example `uv run pytest tests/test_sequ
 ## Qibocal and marimo
 
 The [two-qutrit example](../examples/platforms/split_transmons/README.md) and
-[interactive notebook](../notebooks/calibration.py) use published Qibocal 0.2.6.
-The notebook follows the explicit phases demonstrated in
-[qiboteam/qibocal#1716](https://github.com/qiboteam/qibocal/pull/1716), without
-depending on that unmerged PR. Python 3.11-3.13 is required for this optional group:
+[interactive notebook](../notebooks/calibration.py) use Qibocal's `Executor` and
+`BoundProtocol` from
+[qiboteam/qibocal#1716](https://github.com/qiboteam/qibocal/pull/1716).
+The optional group pins commit `3b15fde3cc229838b093a402cc5e45e3e35e92ed`
+of that unmerged PR. Python 3.11-3.13 is required for this optional group:
 
 ```sh
 uv sync --locked --group notebooks
@@ -44,6 +45,16 @@ data, Qibocal's fitted results and Plotly reports, and applies updates only on
 request. Updates persist across protocols in the current in-memory session;
 reset reloads the original runcard. JSON parameter overrides expose each
 protocol's own parameters rather than adding another calibration API.
+
+`examples/calibration.py` only prepares the platform, sweep parameters, and bound
+protocol; callers execute phases directly with Qibocal's `Executor`. The PR's
+built-in routines still take legacy arguments, so small adapters capture the
+platform/targets, accept the explicit fit error-floor option, and collect
+per-target figures/tables into a report output list. A platform adapter routes
+`Executor.update(results)` to the routine's per-target update function: the PR
+otherwise calls Qibolab's configuration-dictionary update with fit results.
+The notebook runs individual phases so updates remain opt-in; a full
+`executor(bound)` workflow also reports (when configured) and applies updates.
 
 Coupled-mode coherence presets use short windows to limit integration cost,
 not to claim accurate coherence extraction. Full-window isolated T1/T2
