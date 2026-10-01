@@ -1,7 +1,7 @@
 { config, pkgs, ... }:
 {
   packages = with pkgs; [
-    pre-commit
+    prek
     poethepoet
     jupyter
   ];
