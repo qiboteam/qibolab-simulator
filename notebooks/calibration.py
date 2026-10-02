@@ -21,7 +21,7 @@ with app.setup(hide_code=True):
 @app.cell(hide_code=True)
 def _():
     mo.md("""
-    # Qibocal on two split-transmon qutrits
+    # Qibocal on two qutrits
 
     Qibocal runs real calibration protocols through the Qibolab simulator.
     Explore Ramsey in individual stages and qubit flux in a full operation.
@@ -43,7 +43,7 @@ def create_executor():
     path = "var/report/"
     coupled = True
 
-    platform = create_calibration_platform("split_transmons")
+    platform = create_calibration_platform("qutrits")
     if not coupled:
         platform.update({"configs.hamiltonian.couplings": []})
 

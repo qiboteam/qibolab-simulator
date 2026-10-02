@@ -23,7 +23,7 @@ Run a focused module while iterating, for example `uv run pytest tests/test_sequ
 
 ## Qibocal and marimo
 
-The [two-qutrit example](../examples/platforms/split_transmons/README.md) and
+The [two-qutrit example](../examples/platforms/qutrits/README.md) and
 [calibration notebook](../notebooks/calibration.py) use Qibocal's `Executor` and
 `BoundProtocol` from
 [qiboteam/qibocal#1716](https://github.com/qiboteam/qibocal/pull/1716).
@@ -34,7 +34,6 @@ Python 3.11-3.13 is required for this optional group:
 ```sh
 uv sync --locked --group notebooks
 uv run --group notebooks marimo edit notebooks/calibration.py
-uv run --group notebooks pytest tests/test_qibocal.py tests/test_split_transmons.py
 uv run --group notebooks marimo check --strict notebooks/calibration.py
 uv run --group notebooks marimo export html notebooks/calibration.py \
     -o /tmp/calibration.html -- --protocol rabi_amplitude
@@ -71,7 +70,7 @@ uv run --group notebooks marimo export html notebooks/calibration.py \
 ```
 
 The notebook loads the example directly with Qibocal's
-`create_calibration_platform("split_transmons")`. Its `calibration.json` supplies
+`create_calibration_platform("qutrits")`. Its `calibration.json` supplies
 the model's initial frequencies, sweetspots, and coherence times through the
 standard platform loader. Built-in `Protocol` instances bind parameters directly,
 e.g. `protocols.rabi_amplitude(min_amp=0.01,

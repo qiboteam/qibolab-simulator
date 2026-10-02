@@ -1,6 +1,6 @@
 # Direct platform loading and Marimo shutdown
 
-The notebook now calls `qibocal.create_calibration_platform("split_transmons")`
+The notebook now calls `qibocal.create_calibration_platform("qutrits")`
 directly. There is no local platform wrapper or signal-handler manipulation.
 The example's `calibration.json` provides the initial metadata formerly
 constructed by the deleted helper.

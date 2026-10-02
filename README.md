@@ -21,7 +21,7 @@ the scripts with `python`. For a caller-managed Dask cluster, use
 With [devenv](https://devenv.sh/), run `devenv shell` to enter a Python 3.12
 environment with development, notebook, and distributed dependencies installed.
 It sets `QIBOLAB_PLATFORMS` to this checkout's `examples/platforms`, so Qibolab
-can load the `split_transmons` platform by name.
+can load the `qutrits` platform by name.
 
 ## Scope
 
@@ -63,7 +63,7 @@ the `codecov_token` GitHub Actions secret while this repository is private.
 
 - [Minimal platform and Rabi sweep](examples/rabi.py)
 - [End-to-end Rabi benchmark](benchmarks/rabi.py)
-- [Two coupled split-transmon qutrits](examples/platforms/split_transmons/README.md),
+- [Two coupled qutrits](examples/platforms/qutrits/README.md),
   with RX/RX90/RX12 and a flux-driven CZ pulse.
 - [Code-driven Qibocal calibration notebook](notebooks/calibration.py):
   `uv sync --group notebooks`, then

@@ -1,4 +1,4 @@
-# Two split-transmon qutrits
+# Two qutrits
 
 This example converts Qibolab's
 [split-transmon emulator platform](https://github.com/qiboteam/qibolab/tree/10b4bce0b82237cc94d726990054a4219ed2f397/tests/instruments/emulator/platforms/split-transmons).
@@ -10,7 +10,7 @@ Qibocal's platform metadata, but are not physical resonator simulations.
 Load a fresh instance from the repository root:
 
 ```python
-from examples.platforms.split_transmons import create_platform
+from examples.platforms.qutrits import create_platform
 
 platform = create_platform()
 ```
@@ -24,7 +24,7 @@ export QIBOLAB_PLATFORMS="$PWD/examples/platforms"
 ```python
 from qibolab import create_platform
 
-platform = create_platform("split_transmons")
+platform = create_platform("qutrits")
 ```
 
 The conversion explicitly changes the physical/readout contract:
@@ -49,7 +49,7 @@ uv sync --group notebooks
 uv run --group notebooks marimo edit notebooks/calibration.py
 ```
 
-The notebook uses `qibocal.create_calibration_platform("split_transmons")`
+The notebook uses `qibocal.create_calibration_platform("qutrits")`
 directly. `calibration.json` supplies the initial qubit frequencies, sweetspots,
 and coherence times matching the simulator model.
 
