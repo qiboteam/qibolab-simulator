@@ -30,9 +30,9 @@ def _():
     [qiboteam/qibocal#1716](https://github.com/qiboteam/qibocal/pull/1716).
     The notebook dependencies pin that unmerged PR.
 
-    Edit the settings below. The sections share protocol settings but use separate
-    in-memory platforms. Updates last until you rerun platform creation;
-    the example runcard is never modified.
+    Edit the settings below. The sections share an in-memory platform and executor.
+    Updates last until you rerun platform creation; the example runcard is never
+    modified.
     """)
     return
 
@@ -46,7 +46,8 @@ def _():
     if not coupled:
         platform.update({"configs.hamiltonian.couplings": []})
 
-    shutil.rmtree(path)
+    if Path(path).exists():
+        shutil.rmtree(path)
     executor = Executor.create(platform=platform, path=path, update=False)
     return (executor,)
 
@@ -57,8 +58,9 @@ def _():
     ## 1. Individual executor calls
 
     Run acquisition, fitting, and reporting separately, inspecting the outputs
-    between stages. Set `coupled = False` in the platform cell for isolated
-    calibration.
+    between stages. Each stage returns a `Completed` object containing the bound
+    protocol, targets, and outputs collected so far. Set `coupled = False` in the
+    platform cell for isolated calibration.
     """)
     return
 
@@ -72,13 +74,13 @@ def bind_protocol():
 @app.cell
 def acquire_protocol(bound, executor):
     with executor:
-        data = executor.acquire(bound, nshots=1000, targets=[0, 1])
-    return (data,)
+        acquired = executor.acquire(bound, nshots=1000, targets=[0, 1])
+    return (acquired,)
 
 
 @app.cell
-def _(data):
-    show_data(data)
+def _(acquired):
+    show_data(acquired.data)
     return
 
 
@@ -87,28 +89,29 @@ def _():
     mo.md("""
     ### Fit
 
-    `error_floor = True` floors binomial errors at `1/nshots` on a fit-only copy.
-    Raw data stay unchanged; set it to `False` for unmodified fitting inputs.
+    Pass the acquired `Completed` object to `executor.fit()`. It returns a new
+    `Completed` object with fitting results attached, retaining the data, bound
+    protocol, and targets.
     """)
     return
 
 
 @app.cell
-def fit_protocol(bound, data, executor):
-    fitted = executor.fit(data, bound, targets=[0, 1])
-    fitted
+def fit_protocol(acquired, executor):
+    fitted = executor.fit(acquired)
+    fitted.results
     return (fitted,)
 
 
 @app.cell
-def _(bound, data, executor, fitted):
-    reports = executor.report(data, fitted, bound, targets=[0, 1])
-    return (reports,)
+def _(executor, fitted):
+    reported = executor.report(fitted)
+    return (reported,)
 
 
 @app.cell
-def _(reports):
-    show_reports(reports)
+def _(reported):
+    show_reports(reported.reports)
     return
 
 
@@ -124,10 +127,10 @@ def _():
 
 
 @app.cell
-def _(bound, executor, fitted):
+def _(executor, reported):
     apply_update = False
     if apply_update:
-        executor.update(fitted, bound)
+        executor.update(reported)
     return
 
 

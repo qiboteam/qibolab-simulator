@@ -1804,7 +1804,7 @@ wheels = [
 [[package]]
 name = "qibocal"
 version = "0.2.7"
-source = { git = "https://github.com/qiboteam/qibocal.git?rev=feat%2Fnew-protocol-interface-1456#15a6c5f9bfcc980e18a0791865c1173ec56f7121" }
+source = { git = "https://github.com/qiboteam/qibocal.git?rev=feat%2Fnew-protocol-interface-1456#87abd3350612b72e64b09db115ee0cf22886b507" }
 dependencies = [
     { name = "click" },
     { name = "jinja2" },
