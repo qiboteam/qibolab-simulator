@@ -83,9 +83,10 @@ from `executor.report(data, fitted, bound, targets=[0, 1])`.
 Updates use `executor.update(fitted, bound, targets=[0, 1])` on the session platform.
 The notebook uses `with executor:` to connect, disconnect, and persist calibration
 metadata. No local protocol adapters are needed.
-Display helpers come from
-[qibocal-widgets](https://github.com/qiboteam/qibocal-widgets/), keeping
-the notebook focused on settings and Qibocal calls.
+The executor is the `MarimoExecutor` from
+[qibocal-widgets](https://github.com/qiboteam/qibocal-widgets/): every phase
+returns a `Completed` that renders its data and reports as the cell output,
+keeping the notebook focused on settings and Qibocal calls.
 
 Short coherence windows limit integration cost but do not provide reliable
 coherence extraction. Full-window isolated T1/T2 regressions compare fitted times

@@ -9,8 +9,8 @@ with app.setup(hide_code=True):
     from pathlib import Path
 
     import marimo as mo
-    from qibocal import Executor, create_calibration_platform, protocols
-    from qibocal_widgets.marimo import show_data, show_reports
+    from qibocal import create_calibration_platform, protocols
+    from qibocal_widgets.marimo import MarimoExecutor
 
     os.environ["QIBOLAB_PLATFORMS"] = str(
         Path(__file__).resolve().parents[1] / "examples" / "platforms"
@@ -48,7 +48,7 @@ def _():
 
     if Path(path).exists():
         shutil.rmtree(path)
-    executor = Executor.create(platform=platform, path=path, update=False)
+    executor = MarimoExecutor.create(platform=platform, path=path, update=False)
     return (executor,)
 
 
@@ -75,13 +75,8 @@ def bind_protocol():
 def acquire_protocol(bound, executor):
     with executor:
         acquired = executor.acquire(bound, nshots=1000, targets=[0, 1])
+    acquired
     return (acquired,)
-
-
-@app.cell
-def _(acquired):
-    show_data(acquired.data)
-    return
 
 
 @app.cell(hide_code=True)
@@ -106,13 +101,8 @@ def fit_protocol(acquired, executor):
 @app.cell
 def _(executor, fitted):
     reported = executor.report(fitted)
+    reported
     return (reported,)
-
-
-@app.cell
-def _(reported):
-    show_reports(reported.reports)
-    return
 
 
 @app.cell(hide_code=True)
@@ -162,24 +152,13 @@ def run_protocol(executor):
             ),
             targets=[0],
         )
+    completed
     return (completed,)
 
 
 @app.cell
 def _(completed):
-    show_data(completed.data)
-    return
-
-
-@app.cell
-def _(completed):
     completed.results
-    return
-
-
-@app.cell
-def display_completed_reports(completed):
-    show_reports(completed.reports)
     return
 
 
