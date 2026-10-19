@@ -9,8 +9,8 @@ with app.setup(hide_code=True):
     from pathlib import Path
 
     import marimo as mo
-    from helpers import show_data, show_reports
     from qibocal import Executor, create_calibration_platform, protocols
+    from qibocal_widgets.marimo import show_data, show_reports
 
     os.environ["QIBOLAB_PLATFORMS"] = str(
         Path(__file__).resolve().parents[1] / "examples" / "platforms"
@@ -28,7 +28,7 @@ def _():
     Compare **acquire -> fit -> report -> update** with a single `executor(bound)`
     call, using the `Executor` and `BoundProtocol` API from
     [qiboteam/qibocal#1716](https://github.com/qiboteam/qibocal/pull/1716).
-    The notebook dependencies pin that unmerged PR.
+    The notebook dependencies pin Qibocal's `protodev` branch, which includes it.
 
     Edit the settings below. The sections share an in-memory platform and executor.
     Updates last until you rerun platform creation; the example runcard is never

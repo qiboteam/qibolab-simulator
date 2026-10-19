@@ -27,8 +27,10 @@ The [two-qutrit example](../examples/platforms/qutrits/README.md) and
 [calibration notebook](../notebooks/calibration.py) use Qibocal's `Executor` and
 `BoundProtocol` from
 [qiboteam/qibocal#1716](https://github.com/qiboteam/qibocal/pull/1716).
-The optional group tracks the `feat/new-protocol-interface-1456` branch
-of that unmerged PR; `uv.lock` records the resolved commit.
+The optional group tracks Qibocal's `protodev` branch, which includes that
+unmerged PR and is the branch targeted by
+[qibocal-widgets](https://github.com/qiboteam/qibocal-widgets/); `uv.lock`
+records the resolved commits.
 Python 3.11-3.13 is required for this optional group:
 
 ```sh
@@ -81,7 +83,8 @@ from `executor.report(data, fitted, bound, targets=[0, 1])`.
 Updates use `executor.update(fitted, bound, targets=[0, 1])` on the session platform.
 The notebook uses `with executor:` to connect, disconnect, and persist calibration
 metadata. No local protocol adapters are needed.
-Display helpers live in the local `notebooks/helpers/` package, keeping
+Display helpers come from
+[qibocal-widgets](https://github.com/qiboteam/qibocal-widgets/), keeping
 the notebook focused on settings and Qibocal calls.
 
 Short coherence windows limit integration cost but do not provide reliable

@@ -11,10 +11,6 @@
     PYTHONBREAKPOINT = "pudb.set_trace";
   };
 
-  enterShell = ''
-    export PYTHONPATH="${config.devenv.root}/notebooks''${PYTHONPATH:+:$PYTHONPATH}"
-  '';
-
   languages.python = {
     enable = true;
     libraries = with pkgs; [ zlib ];
