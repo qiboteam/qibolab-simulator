@@ -103,6 +103,17 @@ preprocessing; inspect fit results and uncertainties before updating.
 Both execution paths disconnect through the executor's context manager,
 including when execution fails.
 
+The [performance notebook](../notebooks/performance.py) compares the QuTiP and
+dynamiqs backends on Rabi, Ramsey, and chevron sweeps of the same platform. It
+needs the `dynamiqs` extra as well, and takes its sweep sizes from the command
+line:
+
+```sh
+uv run --group notebooks --extra dynamiqs marimo edit notebooks/performance.py
+uv run --group notebooks --extra dynamiqs marimo export html \
+    notebooks/performance.py -o /tmp/performance.html -- --points "16 64"
+```
+
 The current Qibolab version has a
 [headless Marimo shutdown issue](../notebooks/qibolab-platform-shutdown.md):
 HTML export writes its output but may not terminate.
@@ -112,8 +123,13 @@ workflow has a separate Python 3.12 job for these regressions; the docs workflow
 executes the notebook export. The base driver does not depend on Qibocal or marimo.
 
 The implementation has four boundaries: serializable configuration and pulse
-compilation; the Qibolab-independent numerical engine; lazy sweep expansion and
-bounded scheduling; and terminal measurement conversion. Keep solver jobs
+compilation; the Qibolab-independent numerical engines; lazy sweep expansion and
+bounded scheduling; and terminal measurement conversion. The QuTiP `engine` and
+the batched `dynamiqs_engine` share the model, frames, operators, segmentation,
+term classification, and validation, and must agree up to solver accuracy:
+`tests/test_dynamiqs.py` checks every physical case against QuTiP. Pass
+coefficient arrays to JAX as traced arguments, never through closures, so that
+compiled solvers are reused. Keep solver jobs
 pickleable, random streams tied to experiment coordinates, and unsupported
 physical behavior explicit. A new physical approximation needs an accuracy
 regression, not just an execution smoke test.

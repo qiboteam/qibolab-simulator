@@ -46,7 +46,7 @@ its own pool for that call.
 | Control | Meaning |
 | --- | --- |
 | `workers` | Local process count; must remain `1` with an external executor |
-| `batch_size` | Experiments per submitted task; default `8` |
+| `batch_size` | Experiments per submitted task; default `8` for QuTiP, `1024` for dynamiqs |
 | `max_in_flight` | Maximum submitted, not-yet-consumed batches; defaults to `2 * workers` |
 | `blas_threads` | Numerical-library thread limit inside each worker; default `1` |
 | `seed` | Optional reproducible measurement-sampling seed |
@@ -62,6 +62,71 @@ batch size, or completion order. With a fixed seed, repeated plays repeat the
 measurement stream, including across local/distributed scheduling. Change the
 seed for independent repeats. This is a sampling guarantee, not a promise of
 bitwise solver agreement across different numerical libraries or machines.
+
+## dynamiqs backend: batched, on GPU
+
+Install the optional extra with `uv sync --extra dynamiqs` or
+`pip install -e '.[dynamiqs]'`, then select the backend:
+
+```python
+from qibolab_simulator import DynamiqsSettings, Settings, SimulatorController
+
+controller = SimulatorController(
+    backend="dynamiqs",
+    solver=Settings(rtol=1e-7, atol=1e-9),  # Shared with QuTiP.
+    dynamiqs=DynamiqsSettings(method="dopri8", precision="double", device=None),
+)
+```
+
+The runcard, pulse compilation, rotating frames, tolerances, and seeded
+measurement sampling are the same for both backends. Results agree up to solver
+accuracy, so switching backend leaves a fixed-seed single-shot stream unchanged
+except for shots whose probabilities differ by about the tolerance.
+
+[dynamiqs](https://www.dynamiqs.org) runs on [JAX](https://docs.jax.dev). Install
+JAX for your accelerator (for example `pip install -U "jax[cuda12]"`) as
+described in its documentation; `device=None` uses JAX's default device, which is
+the GPU when one is available.
+
+Each submitted batch (`batch_size`, default `1024`) is split into groups of
+experiments with the same structure, and each group is solved together:
+
+- Every pulse boundary splits the evolution into segments, as in QuTiP. Each
+  segment is rescaled to unit duration, so swept delays and durations still
+  batch.
+- Segments without time-dependent terms, such as idle delays or resonant
+  rectangular pulses, are exponentiated exactly. Dissipative segments use the
+  Lindbladian, of dimension `D²`.
+- Driven segments use an adaptive Runge-Kutta method that steps onto every
+  sample boundary. The solver shares those boundaries across a group, so
+  amplitude, phase, frequency, delay, and flux-offset sweeps form one group,
+  while each distinct pulse duration forms its own.
+- Batch, sample, and boundary counts are padded to powers of two. The first call
+  compiles the solvers; later calls with the same shapes reuse them, even with
+  different swept values.
+
+| `DynamiqsSettings` | Meaning |
+| --- | --- |
+| `method` | `"dopri8"` (default, like QuTiP's `dop853`), `"dopri5"`, or `"tsit5"` |
+| `precision` | `"double"` (default) or `"single"`, set process-wide in JAX |
+| `device` | `"cpu"`, `"gpu"`, `"tpu"`, or `None` for JAX's default |
+
+Single precision is much faster on most GPUs but cannot meet the default
+tolerances: loosen them, for example to `Settings(rtol=1e-5, atol=1e-6)`.
+Keep `workers=1` for a single accelerator. Several local workers or Dask
+workers each run their own JAX process, which suits one worker per device.
+
+The [performance notebook](../notebooks/performance.py) times both backends on
+the two-qutrit platform and checks their agreement:
+
+```sh
+uv sync --group notebooks --extra dynamiqs
+uv run --group notebooks --extra dynamiqs marimo edit notebooks/performance.py
+```
+
+On a laptop CPU, warm dynamiqs calls ranged from about as fast as QuTiP to twice
+as fast on 64-point sweeps. Accelerators and larger sweeps are where batching
+pays off: benchmark your own experiments, including first-call compilation.
 
 ## Caller-managed Dask cluster
 
@@ -142,5 +207,5 @@ approximate away subsystem correlations within a solve.
 
 Use one numerical thread per worker initially to avoid oversubscription, then
 benchmark deliberately. Increase system size, sweep size, and worker count
-separately, checking accuracy as well as throughput. This is CPU/QuTiP execution;
-an external Dask executor does not by itself enable GPU solving.
+separately, checking accuracy as well as throughput. An external Dask executor
+does not by itself enable GPU solving: select the dynamiqs backend for that.

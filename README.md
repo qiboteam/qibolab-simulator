@@ -1,8 +1,9 @@
 # Qibolab simulator
 
-A standalone QuTiP driver for pulse-level simulation through Qibolab's execution
-interface. It targets small-system calibration experiments, with rotating-frame
-evolution, mixed-level Duffing oscillators, and bounded parallel sweep execution.
+A standalone driver for pulse-level simulation through Qibolab's execution
+interface, solving with QuTiP or, optionally, with dynamiqs on GPU. It targets
+small-system calibration experiments, with rotating-frame evolution, mixed-level
+Duffing oscillators, and bounded parallel or batched sweep execution.
 
 ## Install and run
 
@@ -16,7 +17,9 @@ uv run python benchmarks/rabi.py --workers 1 2 --points 201
 
 Alternatively, install into your environment with `pip install -e .` and run
 the scripts with `python`. For a caller-managed Dask cluster, use
-`uv sync --extra distributed` or `pip install -e '.[distributed]'`.
+`uv sync --extra distributed` or `pip install -e '.[distributed]'`. For the
+batched dynamiqs backend, on CPU or GPU, use `uv sync --extra dynamiqs` or
+`pip install -e '.[dynamiqs]'`.
 
 With [devenv](https://devenv.sh/), run `devenv shell` to enter a Python 3.12
 environment with development, notebook, and distributed dependencies installed.
@@ -32,6 +35,8 @@ can load the `qutrits` platform by name.
   averaged non-ground populations; synthetic integration returns `(value, 0)`.
 - One worker by default; reusable local process pools or an externally supplied
   process-based executor, including Dask.
+- `SimulatorController(backend="dynamiqs")` solves whole sweeps as JAX batches,
+  on CPU, GPU, or TPU, with the same configuration as the default QuTiP backend.
 
 This is an **RWA model**, not an exact full lab-frame emulator. It resets to the
 ground state for each experiment and does not model RAW readout, mid-circuit
@@ -51,7 +56,8 @@ starting point on a laptop.
 
 Run the CI tasks locally with `uv run --with poethepoet poe lint` and
 `uv run --with poethepoet poe test`. Install `--extra distributed` to include
-the Dask tests, or `--group notebooks` to include the Qibocal integration tests.
+the Dask tests, `--extra dynamiqs` for the dynamiqs backend tests, or
+`--group notebooks` to include the Qibocal integration tests.
 
 CI has separate tests, docs, and wheels workflows using the shared
 [qiboteam workflows](https://github.com/qiboteam/workflows) on the `uv` ref,
@@ -65,6 +71,8 @@ the `codecov_token` GitHub Actions secret while this repository is private.
 - [End-to-end Rabi benchmark](benchmarks/rabi.py)
 - [Two coupled qutrits](examples/platforms/qutrits/README.md),
   with RX/RX90/RX12 and a flux-driven CZ pulse.
+- [QuTiP and dynamiqs performance notebook](notebooks/performance.py):
+  `uv run --group notebooks --extra dynamiqs marimo edit notebooks/performance.py`.
 - [Code-driven Qibocal calibration notebook](notebooks/calibration.py):
   `uv sync --group notebooks`, then
   `uv run --group notebooks marimo edit notebooks/calibration.py`

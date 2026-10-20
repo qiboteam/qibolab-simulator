@@ -5,6 +5,7 @@ from collections.abc import Iterator
 from concurrent.futures import Executor, ProcessPoolExecutor, ThreadPoolExecutor
 from dataclasses import dataclass
 from functools import partial
+from typing import Literal
 
 import numpy as np
 from pydantic import Field, PrivateAttr, model_validator
@@ -20,7 +21,7 @@ from qibolab._core.pulses import PulseId
 from qibolab._core.sweeper import ParallelSweepers
 from threadpoolctl import threadpool_limits
 
-from .engine import Settings, evolve
+from .engine import DynamiqsSettings, Settings, evolve
 from .execution import batches, bounded_map
 from .sequence import Experiment, compile_sequence
 from .sweep import points, sweep_shape
@@ -59,21 +60,44 @@ def _measure(
     return results
 
 
+def _solve(
+    jobs: tuple[_Job, ...],
+    settings: Settings,
+    backend: str,
+    dynamiqs: DynamiqsSettings,
+) -> list[np.ndarray]:
+    problems = [
+        (
+            job.experiment.model,
+            job.experiment.drives,
+            job.experiment.fluxes,
+            job.experiment.duration,
+        )
+        for job in jobs
+    ]
+    if backend == "qutip":
+        return [evolve(*problem, settings) for problem in problems]
+    # Imported on demand: dynamiqs is an optional dependency.
+    from .dynamiqs_engine import evolve_batch
+
+    return evolve_batch(problems, settings, dynamiqs)
+
+
 def _run_batch(
     jobs: tuple[_Job, ...],
     *,
     settings: Settings,
+    backend: str,
+    dynamiqs: DynamiqsSettings,
     options: ExecutionParameters,
     seed: int,
     blas_threads: int,
 ) -> list[tuple[tuple[int, ...], dict[PulseId, np.ndarray]]]:
     results = []
     with threadpool_limits(limits=blas_threads):
-        for job in jobs:
+        solved = _solve(jobs, settings, backend, dynamiqs)
+        for job, probabilities in zip(jobs, solved, strict=True):
             exp = job.experiment
-            probabilities = evolve(
-                exp.model, exp.drives, exp.fluxes, exp.duration, settings
-            )
             # Coordinates, not worker numbers or completion order, define randomness.
             rng = np.random.default_rng(
                 np.random.SeedSequence(
@@ -85,8 +109,10 @@ def _run_batch(
 
 
 class SimulatorController(Controller):
-    """Rotating-frame QuTiP controller; one worker by default.
+    """Rotating-frame controller; one worker by default.
 
+    ``backend`` selects QuTiP or dynamiqs, which batches each submitted batch of
+    experiments on a CPU, GPU, or TPU. Both share every other setting.
     ``executor`` can be a caller-owned Dask ``Client.get_executor()``.
     Use process workers with one execution thread each, not shared-thread solvers.
     """
@@ -94,11 +120,13 @@ class SimulatorController(Controller):
     address: str = "local"
     sampling_rate_: float = Field(default=1, gt=0, allow_inf_nan=False)
     workers: int = Field(default=1, ge=1)
-    batch_size: int = Field(default=8, ge=1)
+    batch_size: int | None = Field(default=None, ge=1)
     max_in_flight: int | None = Field(default=None, ge=1)
     blas_threads: int = Field(default=1, ge=1)
     seed: int | None = Field(default=None, ge=0)
     solver: Settings = Field(default_factory=Settings)
+    backend: Literal["qutip", "dynamiqs"] = "qutip"
+    dynamiqs: DynamiqsSettings = Field(default_factory=DynamiqsSettings)
     executor: Executor | None = Field(default=None, exclude=True, repr=False)
     _pool: ProcessPoolExecutor | None = PrivateAttr(default=None)
 
@@ -115,6 +143,13 @@ class SimulatorController(Controller):
     @property
     def sampling_rate(self) -> float:
         return self.sampling_rate_
+
+    @property
+    def effective_batch_size(self) -> int:
+        """Experiments per task: few for QuTiP, a whole sweep chunk for dynamiqs."""
+        if self.batch_size is not None:
+            return self.batch_size
+        return 8 if self.backend == "qutip" else 1024
 
     def connect(self) -> None:
         """Keep a local process pool warm until disconnect."""
@@ -168,6 +203,8 @@ class SimulatorController(Controller):
         run = partial(
             _run_batch,
             settings=self.solver,
+            backend=self.backend,
+            dynamiqs=self.dynamiqs,
             options=options,
             seed=seed,
             blas_threads=self.blas_threads,
@@ -176,7 +213,7 @@ class SimulatorController(Controller):
         if owned:
             self.connect()
         executor = self.executor if self.executor is not None else self._pool
-        tasks = batches(jobs(), self.batch_size)
+        tasks = batches(jobs(), self.effective_batch_size)
         completed = (
             map(run, tasks)
             if executor is None

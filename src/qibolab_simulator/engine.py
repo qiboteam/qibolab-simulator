@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 from math import isfinite, pi, sqrt
 from numbers import Integral, Real
+from typing import Literal
 
 import numpy as np
 import qutip as qt
@@ -155,6 +156,8 @@ class Flux:
 
 @dataclass(frozen=True)
 class Settings:
+    """Solver accuracy, shared by the QuTiP and dynamiqs backends."""
+
     rtol: float = 1e-7
     atol: float = 1e-9
     nsteps: int = 100000
@@ -163,6 +166,28 @@ class Settings:
         _real("rtol", self.rtol, positive=True)
         _real("atol", self.atol, positive=True)
         _integer("nsteps", self.nsteps, 1)
+
+
+@dataclass(frozen=True)
+class DynamiqsSettings:
+    """Options of the dynamiqs backend only; the QuTiP backend ignores them.
+
+    ``precision`` and ``device`` set JAX's process-wide defaults when solving.
+    ``device=None`` keeps JAX's default, which is a GPU when one is available.
+    """
+
+    method: Literal["dopri8", "dopri5", "tsit5"] = "dopri8"
+    precision: Literal["double", "single"] = "double"
+    device: Literal["cpu", "gpu", "tpu"] | None = None
+
+    def __post_init__(self) -> None:
+        for name, allowed in (
+            ("method", ("dopri8", "dopri5", "tsit5")),
+            ("precision", ("double", "single")),
+            ("device", (None, "cpu", "gpu", "tpu")),
+        ):
+            if getattr(self, name) not in allowed:
+                raise ValueError(f"{name} must be one of {allowed}")
 
 
 def frame_frequencies(model: Model) -> tuple[float, ...]:
@@ -239,20 +264,14 @@ def _coefficient(pulse: Drive | Flux, origin: float, detuning: float = 0.0):
 _DEFAULT_SETTINGS = Settings()
 
 
-def evolve(
+def validate(
     model: Model,
     drives: tuple[Drive, ...],
     fluxes: tuple[Flux, ...],
     duration: float,
-    settings: Settings = _DEFAULT_SETTINGS,
-) -> NDArray[np.float64]:
-    """Return terminal joint basis probabilities, with the last subsystem fastest.
-
-    All pulse boundaries restart integration. Changing sample sequences additionally
-    constrain the adaptive step, but constant envelopes and idle intervals do not.
-    Closed, diagonal autonomous segments apply exact phases without integration.
-    Only the terminal state is retained; operators never become dense arrays.
-    """
+    settings: Settings,
+) -> None:
+    """Check one evolution request; shared by all solver backends."""
     if not isinstance(model, Model) or not isinstance(settings, Settings):
         raise ValueError("Expected a Model and Settings")
     _real("duration", duration)
@@ -268,35 +287,107 @@ def evolve(
                 raise ValueError("Pulse target is outside the model")
             if pulse.start + pulse.duration > duration + 1e-9:
                 raise ValueError("Pulse extends beyond evolution duration")
-    frames, annihilation, numbers, drift, collapse, state = _operators(model)
+
+
+def segments(
+    drives: tuple[Drive, ...], fluxes: tuple[Flux, ...], duration: float
+) -> list[tuple[float, float, list[Drive | Flux]]]:
+    """Split ``[0, duration]`` at every pulse boundary, listing the active pulses."""
     pulses = tuple(p for p in (*drives, *fluxes) if p.duration > 0)
     boundaries = sorted(
         {0.0, duration}
         | {min(duration, t) for p in pulses for t in (p.start, p.start + p.duration)}
     )
-    for start, end in zip(boundaries[:-1], boundaries[1:], strict=True):
-        active = [p for p in pulses if p.start < end and p.start + p.duration > start]
+    return [
+        (
+            start,
+            end,
+            [p for p in pulses if p.start < end and p.start + p.duration > start],
+        )
+        for start, end in zip(boundaries[:-1], boundaries[1:], strict=True)
+    ]
+
+
+@dataclass(frozen=True)
+class Term:
+    """An active pulse; static terms join the time-independent Hamiltonian."""
+
+    pulse: Drive | Flux
+    changing: bool
+    detuning: float = 0.0
+
+    @property
+    def static(self) -> bool:
+        return not self.changing and self.detuning == 0
+
+
+def classify(active: list[Drive | Flux], frames: tuple[float, ...]) -> list[Term]:
+    """Detunings are angular frequencies from each target's rotating frame."""
+    return [
+        Term(
+            pulse,
+            bool(np.any(pulse.samples != pulse.samples[0])),
+            (2 * pi / 1e9) * (pulse.frequency - frames[pulse.target])
+            if isinstance(pulse, Drive)
+            else 0.0,
+        )
+        for pulse in active
+    ]
+
+
+def checked_probabilities(
+    probabilities: np.ndarray, settings: Settings, floor: float = 1e-10
+) -> NDArray[np.float64]:
+    """Reject invalid solver output, then clip and renormalize it."""
+    tolerance = max(floor, min(1e-5, 20 * (settings.atol + settings.rtol)))
+    if (
+        not np.all(np.isfinite(probabilities))
+        or np.max(np.abs(np.imag(probabilities))) > tolerance
+        or np.min(np.real(probabilities)) < -tolerance
+        or abs(np.sum(probabilities) - 1) > tolerance
+    ):
+        raise RuntimeError("Solver produced invalid or unnormalized probabilities")
+    probabilities = np.clip(np.real(probabilities), 0, 1)
+    return probabilities / probabilities.sum()
+
+
+def evolve(
+    model: Model,
+    drives: tuple[Drive, ...],
+    fluxes: tuple[Flux, ...],
+    duration: float,
+    settings: Settings = _DEFAULT_SETTINGS,
+) -> NDArray[np.float64]:
+    """Return terminal joint basis probabilities, with the last subsystem fastest.
+
+    All pulse boundaries restart integration. Changing sample sequences additionally
+    constrain the adaptive step, but constant envelopes and idle intervals do not.
+    Closed, diagonal autonomous segments apply exact phases without integration.
+    Only the terminal state is retained; operators never become dense arrays.
+    """
+    validate(model, drives, fluxes, duration, settings)
+    frames, annihilation, numbers, drift, collapse, state = _operators(model)
+    for start, end, active in segments(drives, fluxes, duration):
         static = drift
         terms = []
         max_step = 0.0
-        for pulse in active:
-            changing = np.any(pulse.samples != pulse.samples[0])
-            if changing:
+        for term in classify(active, frames):
+            pulse = term.pulse
+            if term.changing:
                 spacing = pulse.duration / len(pulse.samples) / 2
                 max_step = min(max_step, spacing) if max_step else spacing
             if isinstance(pulse, Flux):
-                if changing:
-                    terms.append([numbers[pulse.target], _coefficient(pulse, start)])
-                else:
+                if term.static:
                     static = static + pulse.samples[0] * numbers[pulse.target]
+                else:
+                    terms.append([numbers[pulse.target], _coefficient(pulse, start)])
             else:
                 a = annihilation[pulse.target]
-                detuning = (2 * pi / 1e9) * (pulse.frequency - frames[pulse.target])
-                if not changing and detuning == 0:
+                if term.static:
                     static = static + pulse.samples[0] * a.dag()
                     static = static + pulse.samples[0].conjugate() * a
                 else:
-                    coefficient = _coefficient(pulse, start, detuning)
+                    coefficient = _coefficient(pulse, start, term.detuning)
                     terms.extend(
                         [
                             [a.dag(), coefficient],
@@ -333,13 +424,4 @@ def evolve(
         probabilities = state.data.as_ndarray().diagonal()
     else:
         probabilities = state.data.as_scipy().diagonal()
-    tolerance = max(1e-10, min(1e-5, 20 * (settings.atol + settings.rtol)))
-    if (
-        not np.all(np.isfinite(probabilities))
-        or np.max(np.abs(np.imag(probabilities))) > tolerance
-        or np.min(np.real(probabilities)) < -tolerance
-        or abs(np.sum(probabilities) - 1) > tolerance
-    ):
-        raise RuntimeError("Solver produced invalid or unnormalized probabilities")
-    probabilities = np.clip(np.real(probabilities), 0, 1)
-    return probabilities / probabilities.sum()
+    return checked_probabilities(probabilities, settings)
