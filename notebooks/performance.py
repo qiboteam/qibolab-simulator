@@ -6,6 +6,7 @@ app = marimo.App(width="medium")
 with app.setup(hide_code=True):
     import os
     import platform as system
+    import signal
     from pathlib import Path
     from statistics import median
     from time import perf_counter
@@ -30,7 +31,12 @@ with app.setup(hide_code=True):
     os.environ["QIBOLAB_PLATFORMS"] = str(
         Path(__file__).resolve().parents[1] / "examples" / "platforms"
     )
+    # Qibolab platforms replace the termination handlers, which marimo needs to
+    # stop its kernel: headless exports would never exit.
+    handlers = {s: signal.getsignal(s) for s in (signal.SIGINT, signal.SIGTERM)}
     platform = create_platform("qutrits")
+    for number, handler in handlers.items():
+        signal.signal(number, handler)
     configs = platform.parameters.configs
     natives = platform.natives.single_qubit[0]
     channels = platform.instruments["simulator"].channels

@@ -6,6 +6,7 @@ app = marimo.App(width="medium")
 with app.setup(hide_code=True):
     import os
     import shutil
+    import signal
     from pathlib import Path
 
     import marimo as mo
@@ -42,7 +43,12 @@ def _():
     path = "var/report/"
     coupled = True
 
+    # Qibolab platforms replace the termination handlers, which marimo needs to
+    # stop its kernel: headless exports would never exit.
+    handlers = {s: signal.getsignal(s) for s in (signal.SIGINT, signal.SIGTERM)}
     platform = create_calibration_platform("qutrits")
+    for number, handler in handlers.items():
+        signal.signal(number, handler)
     if not coupled:
         platform.update({"configs.hamiltonian.couplings": []})
 
