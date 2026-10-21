@@ -119,15 +119,25 @@ class SimulatorController(Controller):
 
     address: str = "local"
     sampling_rate_: float = Field(default=1, gt=0, allow_inf_nan=False)
+    """Samples per ns; pulse durations must lie on this grid."""
     workers: int = Field(default=1, ge=1)
+    """Local worker processes; one runs in the calling process."""
     batch_size: int | None = Field(default=None, ge=1)
+    """Experiments per task, defaulting to :attr:`effective_batch_size`."""
     max_in_flight: int | None = Field(default=None, ge=1)
+    """Submitted, unconsumed batches; twice the workers by default."""
     blas_threads: int = Field(default=1, ge=1)
+    """Numerical library threads in each worker."""
     seed: int | None = Field(default=None, ge=0)
+    """Seed of the shot sampling, random if missing."""
     solver: Settings = Field(default_factory=Settings)
+    """Accuracy and propagation strategy."""
     backend: Literal["qutip", "dynamiqs"] = "qutip"
+    """Solver library."""
     dynamiqs: DynamiqsSettings = Field(default_factory=DynamiqsSettings)
+    """Options of the dynamiqs backend."""
     executor: Executor | None = Field(default=None, exclude=True, repr=False)
+    """Caller-owned process executor, e.g. from Dask, replacing local workers."""
     _pool: ProcessPoolExecutor | None = PrivateAttr(default=None)
 
     @model_validator(mode="after")

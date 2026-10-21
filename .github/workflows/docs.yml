@@ -1,22 +1,28 @@
-name: Docs
+name: docs
 
 on:
-  push:
-  pull_request:
-  merge_group:
   workflow_dispatch:
-
-permissions:
-  contents: read
-
-concurrency:
-  group: docs-${{ github.ref }}
-  cancel-in-progress: true
+  push:
+    branches: [main]
+    tags:
+      - "*"
 
 jobs:
-  docs:
-    uses: qiboteam/workflows/.github/workflows/docs.yml@uv
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.classify.outputs.version}}
+
+    steps:
+      - id: classify
+        uses: qiboteam/workflows/actions/docs/version@uv
+
+  deploy-docs:
+    needs: [version]
+    uses: qiboteam/workflows/.github/workflows/latest-stable.yml@uv
     with:
       python-version: "3.12"
-      uv-extras: "--locked --no-dev --group notebooks"
-      output-path: docs/calibration.html
+      trigger-label: "${{needs.version.outputs.version}}"
+      project: qibolab-simulator
+      uv-extras: --locked --no-dev --group docs --group notebooks --extra dynamiqs
+      output-path: docs/build/html

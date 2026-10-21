@@ -10,6 +10,7 @@ __marimo__/
 coverage.xml
 htmlcov/
 dist/
-docs/calibration.html
+docs/build/
+docs/source/_extra/
 *.egg-info/
 var/

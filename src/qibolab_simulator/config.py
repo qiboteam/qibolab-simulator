@@ -16,12 +16,19 @@ class QubitConfig(_Config):
     """Truncated Duffing oscillator; frequencies in Hz and coherence times in ns."""
 
     frequency: float = Field(gt=0)
+    """Fundamental transition frequency, at zero flux bias."""
     anharmonicity: float = 0
+    """Second transition frequency minus the first, negative for transmons."""
     levels: int = Field(default=2, ge=2)
+    """Number of levels of the truncated oscillator."""
     t1: float | None = Field(default=None, gt=0)
+    """Relaxation time of the fundamental transition, or no relaxation."""
     t2: float | None = Field(default=None, gt=0)
+    """Coherence time of the fundamental transition, at most ``2 * t1``."""
     sweetspot: float = 0
+    """Flux of maximum frequency, in flux quanta."""
     asymmetry: float = Field(default=0, ge=0, le=1)
+    """Junction asymmetry of the split transmon."""
 
     @model_validator(mode="after")
     def coherence(self) -> Self:
@@ -42,13 +49,19 @@ class CouplingConfig(_Config):
     """Excitation-conserving exchange coupling, in Hz."""
 
     qubits: tuple[QubitId, QubitId]
+    """The two coupled qubits."""
     coupling: float
+    """Exchange strength."""
 
 
 class HamiltonianConfig(_Config):
+    """The simulated model, under the ``"hamiltonian"`` configuration key."""
+
     kind: Literal["simulator-hamiltonian"] = "simulator-hamiltonian"
     qubits: dict[QubitId, QubitConfig] = Field(min_length=1)
+    """Subsystems, in order: each coupled component's frame is its first qubit's."""
     couplings: tuple[CouplingConfig, ...] = ()
+    """Exchange couplings, at most one per pair."""
 
     @model_validator(mode="after")
     def valid_pairs(self) -> Self:
@@ -65,17 +78,27 @@ class HamiltonianConfig(_Config):
 
 
 class DriveConfig(_Config):
+    """Drive channel, in Hz."""
+
     kind: Literal["simulator-drive"] = "simulator-drive"
     target: QubitId
+    """Driven qubit."""
     frequency: float = Field(gt=0)
+    """Carrier frequency."""
     rabi_frequency: float = Field(default=1e9, gt=0)
+    """Rabi frequency of a resonant, full-amplitude rectangular pulse."""
 
 
 class FluxConfig(_Config):
+    """Flux channel, biasing a split transmon; at most one per qubit."""
+
     kind: Literal["simulator-flux"] = "simulator-flux"
     target: QubitId
+    """Biased qubit."""
     offset: float = 0
+    """Static bias, to which flux pulse amplitudes add."""
     voltage_to_flux: float = 1
+    """Conversion of offsets and amplitudes to flux quanta."""
 
 
 class ReadoutConfig(AcquisitionConfig):
@@ -84,8 +107,11 @@ class ReadoutConfig(AcquisitionConfig):
     model_config = ConfigDict(allow_inf_nan=False)
     kind: Literal["simulator-readout"] = "simulator-readout"
     target: QubitId
+    """Measured qubit."""
     delay: float = 0
+    """Must be zero: acquisition delays are not modeled."""
     smearing: float = 0
+    """Must be zero: acquisition smearing is not modeled."""
 
 
 def register_configs() -> None:

@@ -24,6 +24,7 @@ dynamiqs = ["dynamiqs>=0.3.7,<0.4"]
 
 [dependency-groups]
 dev = ["pytest>=8", "pytest-cov>=5", "ruff>=0.11", "build>=1"]
+docs = ["sphinx>=8.2,<10", "furo>=2025.7.19", "sphinx-copybutton>=0.5.2,<0.6"]
 notebooks = [
   "qibocal",
   "marimo>=0.24,<0.26",
@@ -54,10 +55,12 @@ test = { sequence = [
 ], env = { OMP_NUM_THREADS = "1", OPENBLAS_NUM_THREADS = "1", MKL_NUM_THREADS = "1" } }
 lint = [{ cmd = "ruff check ." }, { cmd = "ruff format --check ." }]
 lint-warnings = "ruff check --exit-zero --select C90,N,BLE,A,C4,PIE,RET,SIM,NPY,PERF,RUF ."
-docs = { sequence = [
+notebooks = { sequence = [
   { cmd = "marimo check --strict notebooks/calibration.py notebooks/performance.py" },
-  { cmd = "marimo export html notebooks/calibration.py -o docs/calibration.html -- --protocol rabi_amplitude" },
+  { cmd = "marimo export html notebooks/calibration.py -o docs/source/_extra/calibration.html" },
 ], env = { OMP_NUM_THREADS = "1", OPENBLAS_NUM_THREADS = "1", MKL_NUM_THREADS = "1" } }
+sphinx = "sphinx-build -W --keep-going -b html docs/source docs/build/html"
+docs = { sequence = [{ ref = "notebooks" }, { ref = "sphinx" }] }
 
 [tool.ruff]
 target-version = "py311"

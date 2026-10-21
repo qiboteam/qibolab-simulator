@@ -166,9 +166,13 @@ class Settings:
     """
 
     rtol: float = 1e-7
+    """Relative tolerance of adaptive solvers."""
     atol: float = 1e-9
+    """Absolute tolerance of adaptive solvers."""
     nsteps: int = 100000
+    """Maximum number of steps of adaptive solvers, per segment."""
     propagation: Literal["adaptive", "exact"] = "adaptive"
+    """Propagation strategy of the QuTiP backend."""
 
     def __post_init__(self) -> None:
         _real("rtol", self.rtol, positive=True)
@@ -189,9 +193,13 @@ class DynamiqsSettings:
     """
 
     method: Literal["dopri8", "dopri5", "tsit5"] = "dopri8"
+    """Runge-Kutta method of time-dependent segments."""
     precision: Literal["double", "single"] = "double"
+    """Floating-point precision."""
     device: Literal["cpu", "gpu", "tpu"] | None = None
+    """JAX device."""
     frame: Literal["fixed", "drives"] = "fixed"
+    """Rotating frames of each segment."""
 
     def __post_init__(self) -> None:
         for name, allowed in (
