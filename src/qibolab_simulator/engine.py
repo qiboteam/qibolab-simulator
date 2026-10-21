@@ -184,17 +184,21 @@ class DynamiqsSettings:
 
     ``precision`` and ``device`` set JAX's process-wide defaults when solving.
     ``device=None`` keeps JAX's default, which is a GPU when one is available.
+    ``frame="drives"`` shifts each component's frame by its drives' detuning
+    during each segment, so that constant detuned drives are exponentiated too.
     """
 
     method: Literal["dopri8", "dopri5", "tsit5"] = "dopri8"
     precision: Literal["double", "single"] = "double"
     device: Literal["cpu", "gpu", "tpu"] | None = None
+    frame: Literal["fixed", "drives"] = "fixed"
 
     def __post_init__(self) -> None:
         for name, allowed in (
             ("method", ("dopri8", "dopri5", "tsit5")),
             ("precision", ("double", "single")),
             ("device", (None, "cpu", "gpu", "tpu")),
+            ("frame", ("fixed", "drives")),
         ):
             if getattr(self, name) not in allowed:
                 raise ValueError(f"{name} must be one of {allowed}")

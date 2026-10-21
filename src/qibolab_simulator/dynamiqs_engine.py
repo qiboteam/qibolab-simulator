@@ -8,12 +8,14 @@ frequencies, amplitudes, and constant pulse durations may differ within a batch.
 
 Time-independent segments are exponentiated exactly. Time-dependent segments use
 an adaptive Runge-Kutta method, stepping exactly onto every sample boundary.
+Optionally, frames follow the drives' detuning within each segment, entered and
+left with diagonal phases, so that constant detuned drives are time-independent.
 Batch, sample, and boundary counts are padded to powers of two, and coefficients
 are passed as arrays, so compiled solvers are reused across segments and calls.
 """
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import lru_cache
 
 import dynamiqs as dq
@@ -35,9 +37,11 @@ from .engine import (
     Flux,
     Model,
     Settings,
+    _frame_shifts,
     _operators,
     checked_probabilities,
     classify,
+    components,
     frame_frequencies,
     segments,
     validate,
@@ -75,16 +79,31 @@ class _Segment:
     duration: float
     static: np.ndarray
     terms: tuple[tuple[Drive | Flux, float], ...]
+    # Excitation numbers weighted by the frame shift, on the basis diagonal.
+    frame: np.ndarray
 
 
-def _segments(model: Model, drives, fluxes, duration) -> list[_Segment]:
+def _segments(
+    model: Model, drives, fluxes, duration, follow: bool = False
+) -> list[_Segment]:
+    """With ``follow``, frames shift by their drives' detuning where they agree."""
     annihilation, numbers, drift, _ = _dense(model)
     frames = frame_frequencies(model)
+    roots = components(model)
     result = []
     for start, end, active in segments(drives, fluxes, duration):
         static = drift.copy()
         terms = []
-        for term in classify(active, frames):
+        frame = np.zeros(len(drift))
+        classified = classify(active, frames)
+        shifts = _frame_shifts(classified, roots) if follow else None
+        if shifts:
+            for number, root in zip(numbers, roots, strict=True):
+                if shift := shifts.get(root, 0.0):
+                    static -= shift * number
+                    frame += shift * np.diag(number).real
+            classified = [replace(term, detuning=0.0) for term in classified]
+        for term in classified:
             pulse = term.pulse
             if not term.static:
                 terms.append((pulse, term.detuning))
@@ -96,8 +115,15 @@ def _segments(model: Model, drives, fluxes, duration) -> list[_Segment]:
                 static += pulse.samples[0].conjugate() * a
         # A canonical order lets equally structured segments share a solver.
         terms.sort(key=lambda t: (isinstance(t[0], Flux), t[0].target))
-        result.append(_Segment(start, end - start, static, tuple(terms)))
+        result.append(_Segment(start, end - start, static, tuple(terms), frame))
     return result
+
+
+def _rotate(state, phases: np.ndarray, dissipative: bool):
+    """Apply batched diagonal phases to kets, or on both sides of densities."""
+    phases = jnp.asarray(phases)
+    state = state * phases[:, :, None]
+    return state * jnp.conj(phases)[:, None, :] if dissipative else state
 
 
 def _grid(pulse: Drive | Flux, segment: _Segment) -> tuple | None:
@@ -218,6 +244,10 @@ def _solve_group(
         column = [element[index] for element in group]
         tau = np.array([s.duration for s in column])
         origin = np.array([s.start for s in column])
+        frame = np.stack([s.frame for s in column])
+        shifted = bool(np.any(frame))
+        if shifted:
+            state = _rotate(state, np.exp(1j * origin[:, None] * frame), dissipative)
         static = dq.asqarray(
             jnp.asarray(tau[:, None, None] * np.stack([s.static for s in column]))
         )
@@ -296,6 +326,9 @@ def _solve_group(
             # Exponentiated Lindbladians return vectorized density matrices.
             state = dq.unvectorize(state)
         state = state.to_jax()
+        if shifted:
+            end = (origin + tau)[:, None]
+            state = _rotate(state, np.exp(-1j * end * frame), dissipative)
     final = np.asarray(state, dtype=np.complex128)[:size]
     if dissipative:
         return np.diagonal(final, axis1=-2, axis2=-1)
@@ -323,7 +356,9 @@ def evolve_batch(
     groups: dict[tuple, list[int]] = {}
     split = []
     for index, (model, drives, fluxes, duration) in enumerate(problems):
-        problem_segments = _segments(model, drives, fluxes, duration)
+        problem_segments = _segments(
+            model, drives, fluxes, duration, options.frame == "drives"
+        )
         split.append(problem_segments)
         # Different values are batched; only the structure has to agree.
         groups.setdefault(_key(model, problem_segments), []).append(index)

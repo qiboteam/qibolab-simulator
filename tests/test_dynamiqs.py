@@ -5,7 +5,11 @@ import pytest
 
 pytest.importorskip("dynamiqs")
 
-from qibolab_simulator.dynamiqs_engine import _bucket, evolve_batch  # noqa: E402
+from qibolab_simulator.dynamiqs_engine import (  # noqa: E402
+    _bucket,
+    _segments,
+    evolve_batch,
+)
 from qibolab_simulator.engine import (  # noqa: E402
     Coupling,
     Drive,
@@ -103,6 +107,60 @@ def test_single_problem(name):
     np.testing.assert_allclose(result, evolve(*problem, STRICT), atol=1e-7)
 
 
+FOLLOW = DynamiqsSettings(frame="drives")
+REFERENCE = Settings(rtol=1e-11, atol=1e-13)
+FOLLOW_CASES = CASES | {
+    "constant detuned": (
+        QUTRITS,
+        (Drive(0, 10, 1000, np.full(1000, -0.003j), 4.8e9 + 7e6),),
+        (),
+        1020.0,
+    ),
+    "detuned qubit 1": (QUTRITS, (gaussian(0, 40, 5.5e9 + 1e6, target=1),), (), 40.0),
+    "closed detuned": (
+        CLOSED_QUTRITS,
+        (rotation(1.3, start=5, duration=40, frequency=4.8e9 - 9e6),),
+        (),
+        50.0,
+    ),
+}
+
+
+@pytest.mark.parametrize("name", list(FOLLOW_CASES))
+def test_frame_following_drives(name):
+    problem = FOLLOW_CASES[name]
+    (result,) = evolve_batch([problem], STRICT, FOLLOW)
+    np.testing.assert_allclose(result, evolve(*problem, REFERENCE), atol=1e-8)
+
+
+def test_constant_detuned_drives_become_static():
+    model, drives, fluxes, duration = FOLLOW_CASES["constant detuned"]
+    assert _segments(model, drives, fluxes, duration)[1].terms
+    shifted = _segments(model, drives, fluxes, duration, follow=True)
+    assert [s.terms for s in shifted] == [(), (), ()]
+    assert np.any(shifted[1].frame) and not np.any(shifted[0].frame)
+    # Different detunings in one component keep the fixed frame.
+    drives = (rotation(1, frequency=4.8e9), rotation(1, frequency=5.5e9, target=1))
+    (segment,) = _segments(QUTRITS, drives, (), 20.0, follow=True)
+    assert len(segment.terms) == 1 and not np.any(segment.frame)
+
+
+def test_spectroscopy_sweep_with_frame_following():
+    frequencies = 4.8e9 + np.linspace(-20e6, 20e6, 9)
+    problems = [
+        (
+            QUTRITS,
+            (Drive(0, 0, 1000, np.full(1, -0.002j), frequency),),
+            (),
+            1000.0,
+        )
+        for frequency in frequencies
+    ]
+    results = evolve_batch(problems, STRICT, FOLLOW)
+    for problem, result in zip(problems, results, strict=True):
+        np.testing.assert_allclose(result, evolve(*problem, REFERENCE), atol=1e-8)
+
+
 def test_mixed_batch_preserves_order():
     problems = list(CASES.values()) * 2
     results = evolve_batch(problems, STRICT)
@@ -156,6 +214,8 @@ def test_shared_validation():
         evolve_batch([CASES["idle"]], STRICT, Settings())
     with pytest.raises(ValueError, match="method"):
         DynamiqsSettings(method="euler")
+    with pytest.raises(ValueError, match="frame"):
+        DynamiqsSettings(frame="lab")
 
 
 def test_bucket():

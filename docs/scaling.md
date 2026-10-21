@@ -51,7 +51,8 @@ On the two-qutrit example platform, with T1 and T2, warm 64-point sweeps of a
 3 MHz detuned Rabi and a 2 MHz detuned Ramsey took 0.8 s and 0.9 s, against 3.5 s
 and 7.5 s adaptively, on a laptop CPU. Exact results matched a strict adaptive
 reference within 1e-9; default tolerances deviated by up to 2e-6. The dynamiqs
-backend ignores this setting.
+backend ignores this setting; its `frame="drives"` option applies the same frame
+shift to constant segments only.
 
 ## Local process execution
 
@@ -131,6 +132,14 @@ experiments with the same structure, and each group is solved together:
   sample boundary. The solver shares those boundaries across a group, so
   amplitude, phase, frequency, delay, and flux-offset sweeps form one group,
   while each distinct pulse duration forms its own.
+- With `frame="drives"`, each segment's frames follow the drives' detuning, as
+  in exact QuTiP propagation, so detuned constant drives (spectroscopies) are
+  also exponentiated, and frequency sweeps through resonance stay in one group.
+  Segments driving one component at different frequencies keep the fixed frame.
+  On a GPU, a warm 1024-point spectroscopy of the two-qutrit platform, with a
+  1 µs rectangular pulse, took 0.7 s instead of 10 s, and was about 1000 times
+  more accurate. Shaped pulses still need the Runge-Kutta solver, at unchanged
+  cost.
 - Batch, sample, and boundary counts are padded to powers of two. The first call
   compiles the solvers; later calls with the same shapes reuse them, even with
   different swept values.
@@ -140,6 +149,7 @@ experiments with the same structure, and each group is solved together:
 | `method` | `"dopri8"` (default, like QuTiP's `dop853`), `"dopri5"`, or `"tsit5"` |
 | `precision` | `"double"` (default) or `"single"`, set process-wide in JAX |
 | `device` | `"cpu"`, `"gpu"`, `"tpu"`, or `None` for JAX's default |
+| `frame` | `"fixed"` (default) or `"drives"`, following the drives' detuning |
 
 Single precision is much faster on most GPUs but cannot meet the default
 tolerances: loosen them, for example to `Settings(rtol=1e-5, atol=1e-6)`.
