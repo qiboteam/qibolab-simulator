@@ -13,6 +13,8 @@ from typing import Literal
 import numpy as np
 import qutip as qt
 from numpy.typing import NDArray
+from scipy.linalg import expm
+from scipy.sparse.linalg import expm_multiply
 
 
 def _real(name: str, value: float, *, positive: bool = False) -> None:
@@ -156,16 +158,24 @@ class Flux:
 
 @dataclass(frozen=True)
 class Settings:
-    """Solver accuracy, shared by the QuTiP and dynamiqs backends."""
+    """Solver accuracy, shared by the QuTiP and dynamiqs backends.
+
+    ``propagation="exact"`` makes the QuTiP backend exponentiate every interval
+    between sample edges, instead of integrating adaptively; tolerances then only
+    apply to segments falling back to the adaptive solver. dynamiqs ignores it.
+    """
 
     rtol: float = 1e-7
     atol: float = 1e-9
     nsteps: int = 100000
+    propagation: Literal["adaptive", "exact"] = "adaptive"
 
     def __post_init__(self) -> None:
         _real("rtol", self.rtol, positive=True)
         _real("atol", self.atol, positive=True)
         _integer("nsteps", self.nsteps, 1)
+        if self.propagation not in ("adaptive", "exact"):
+            raise ValueError("propagation must be 'adaptive' or 'exact'")
 
 
 @dataclass(frozen=True)
@@ -190,8 +200,8 @@ class DynamiqsSettings:
                 raise ValueError(f"{name} must be one of {allowed}")
 
 
-def frame_frequencies(model: Model) -> tuple[float, ...]:
-    """Use the lowest-index qubit's frequency for each connected component."""
+def components(model: Model) -> tuple[int, ...]:
+    """The lowest qubit index of each qubit's exchange-connected component."""
     if not isinstance(model, Model):
         raise ValueError("model must be a Model")
     roots = list(range(len(model.qubits)))
@@ -204,7 +214,12 @@ def frame_frequencies(model: Model) -> tuple[float, ...]:
     for coupling in model.couplings:
         first, second = root(coupling.first), root(coupling.second)
         roots[max(first, second)] = min(first, second)
-    return tuple(model.qubits[root(i)].frequency for i in range(len(roots)))
+    return tuple(root(i) for i in range(len(roots)))
+
+
+def frame_frequencies(model: Model) -> tuple[float, ...]:
+    """Use the lowest-index qubit's frequency for each connected component."""
+    return tuple(model.qubits[root].frequency for root in components(model))
 
 
 @lru_cache(maxsize=16)
@@ -335,6 +350,135 @@ def classify(active: list[Drive | Flux], frames: tuple[float, ...]) -> list[Term
     ]
 
 
+# Generators up to this dimension, D for kets and D² for density matrices, are
+# exponentiated densely and cached; larger ones only apply their action.
+_DENSE_LIMIT = 256
+_CACHE_BYTES = 1 << 27
+
+
+@lru_cache(maxsize=16)
+def _generators(model: Model, dense: bool):
+    """Generators of the drift and of every control operator.
+
+    Kets evolve with ``-iH``; column-stacked density matrices with the Lindbladian,
+    whose control terms are commutators. Number generators are diagonal.
+    """
+    _, annihilation, numbers, drift, collapse, _ = _operators(model)
+
+    def generator(operator, dissipators=()):
+        if collapse:
+            result = -1j * (qt.spre(operator) - qt.spost(operator))
+            if dissipators:
+                result += qt.liouvillian(None, list(dissipators))
+        else:
+            result = -1j * operator
+        matrix = result.to("csr").data.as_scipy().tocsr()
+        return matrix.toarray() if dense else matrix
+
+    return (
+        generator(drift, collapse),
+        tuple(generator(a.dag()) for a in annihilation),
+        tuple(generator(a) for a in annihilation),
+        tuple(generator(n) for n in numbers),
+    )
+
+
+def _frame_shifts(terms: list[Term], roots: tuple[int, ...]) -> dict[int, float] | None:
+    """The detuning shared by all drives of each component, or ``None``."""
+    shifts = {}
+    for term in terms:
+        if isinstance(term.pulse, Drive):
+            root = roots[term.pulse.target]
+            if shifts.setdefault(root, term.detuning) != term.detuning:
+                return None
+    return shifts
+
+
+def _edges(terms: list[Term], start: float, end: float, tolerance: float = 1e-9):
+    """Split ``[start, end]`` at the sample edges of every changing pulse."""
+    interior = np.unique(
+        np.concatenate(
+            [
+                p.start + np.arange(1, len(p.samples)) * (p.duration / len(p.samples))
+                for p in (term.pulse for term in terms if term.changing)
+            ]
+            or [np.zeros(0)]
+        )
+    )
+    interior = interior[(interior > start + tolerance) & (interior < end - tolerance)]
+    interior = interior[np.diff(interior, prepend=-np.inf) > tolerance]
+    return [start, *interior, end]
+
+
+def _sample(pulse: Drive | Flux, time: float):
+    index = int((time - pulse.start) * len(pulse.samples) / pulse.duration)
+    return pulse.samples[min(max(index, 0), len(pulse.samples) - 1)]
+
+
+def _propagate(
+    model: Model,
+    terms: list[Term],
+    shifts: dict[int, float],
+    start: float,
+    end: float,
+    state: qt.Qobj,
+    cache: dict,
+) -> qt.Qobj:
+    """Exponentiate each zero-order-hold interval, in a frame following the drives.
+
+    Shifting each component's frame by its drives' detuning ``d`` removes their
+    ``exp(-idt)`` phases, adding ``-d`` times the component's excitation number to
+    the Hamiltonian. Exchange conserves that number, and dissipators are invariant
+    under the frame's phases, so the generator is constant between sample edges.
+    """
+    collapse = _operators(model)[4]
+    if collapse and state.isket:
+        state = state.proj()
+    vector = state.full().ravel(order="F")
+    dense = vector.size <= _DENSE_LIMIT
+    drift, raising, lowering, numbers = _generators(model, dense)
+    detunings = [shifts.get(root, 0.0) for root in components(model)]
+    # The diagonal of -i times the components' excitation numbers, weighted.
+    frame = sum(
+        (d * n.diagonal() for d, n in zip(detunings, numbers, strict=True) if d),
+        np.zeros(vector.size),
+    )
+    vector = np.exp(-start * frame) * vector
+    capacity = _CACHE_BYTES // (16 * vector.size**2)
+    edges = _edges(terms, start, end)
+    for first, second in zip(edges[:-1], edges[1:], strict=True):
+        coefficients = {("flux", i): -d for i, d in enumerate(detunings) if d}
+        for term in terms:
+            pulse = term.pulse
+            value = _sample(pulse, (first + second) / 2)
+            key = ("flux" if isinstance(pulse, Flux) else "drive", pulse.target)
+            coefficients[key] = coefficients.get(key, 0) + value
+        key = (round(second - first, 9), tuple(sorted(coefficients.items())))
+        propagator = cache.get(key) if dense else None
+        if propagator is None:
+            generator = drift
+            for (kind, target), value in coefficients.items():
+                if kind == "flux":
+                    generator = generator + value * numbers[target]
+                else:
+                    generator = generator + value * raising[target]
+                    generator = generator + np.conj(value) * lowering[target]
+            if not dense:
+                vector = expm_multiply((second - first) * generator, vector)
+                continue
+            propagator = expm((second - first) * generator)
+            if len(cache) < capacity:
+                cache[key] = propagator
+        vector = propagator @ vector
+    vector = np.exp(end * frame) * vector
+    if collapse:
+        dimension = state.shape[0]
+        vector = vector.reshape((dimension, dimension), order="F")
+    else:
+        vector = vector[:, None]
+    return qt.Qobj(vector, dims=state.dims, copy=False)
+
+
 def checked_probabilities(
     probabilities: np.ndarray, settings: Settings, floor: float = 1e-10
 ) -> NDArray[np.float64]:
@@ -363,15 +507,20 @@ def evolve(
     All pulse boundaries restart integration. Changing sample sequences additionally
     constrain the adaptive step, but constant envelopes and idle intervals do not.
     Closed, diagonal autonomous segments apply exact phases without integration.
-    Only the terminal state is retained; operators never become dense arrays.
+    Exact propagation exponentiates the other segments, unless a component has
+    drives with different detunings. Only the terminal state is retained; adaptive
+    and large exact propagation never make operators dense arrays.
     """
     validate(model, drives, fluxes, duration, settings)
     frames, annihilation, numbers, drift, collapse, state = _operators(model)
+    roots = components(model)
+    cache = {}
     for start, end, active in segments(drives, fluxes, duration):
         static = drift
         terms = []
         max_step = 0.0
-        for term in classify(active, frames):
+        classified = classify(active, frames)
+        for term in classified:
             pulse = term.pulse
             if term.changing:
                 spacing = pulse.duration / len(pulse.samples) / 2
@@ -398,6 +547,11 @@ def evolve(
             phases = np.exp(-1j * (end - start) * static.diag())
             state = qt.Qobj(phases[:, None] * state.full(), dims=state.dims, copy=False)
             continue
+        if settings.propagation == "exact":
+            shifts = _frame_shifts(classified, roots)
+            if shifts is not None:
+                state = _propagate(model, classified, shifts, start, end, state, cache)
+                continue
         hamiltonian = [static, *terms] if terms else static
         options = {
             "rtol": settings.rtol,

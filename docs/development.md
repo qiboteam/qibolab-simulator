@@ -127,7 +127,8 @@ compilation; the Qibolab-independent numerical engines; lazy sweep expansion and
 bounded scheduling; and terminal measurement conversion. The QuTiP `engine` and
 the batched `dynamiqs_engine` share the model, frames, operators, segmentation,
 term classification, and validation, and must agree up to solver accuracy:
-`tests/test_dynamiqs.py` checks every physical case against QuTiP. Pass
+`tests/test_dynamiqs.py` checks every physical case against QuTiP, and
+`tests/test_exact.py` checks exact propagation against strict adaptive references. Pass
 coefficient arrays to JAX as traced arguments, never through closures, so that
 compiled solvers are reused. Keep solver jobs
 pickleable, random streams tied to experiment coordinates, and unsupported

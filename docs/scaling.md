@@ -23,6 +23,36 @@ shifts, while retaining the phases needed by later pulses. It requires only the
 Hamiltonian diagonal and state vector, not a dense propagator. Driven,
 non-diagonal, time-dependent, and dissipative intervals still use QuTiP.
 
+## Exact propagation
+
+Pulse samples are held constant between sample edges, so the QuTiP backend can
+evolve each sample interval with one matrix exponential, instead of an adaptive
+Runge-Kutta solver. Opt in with:
+
+```python
+controller = SimulatorController(solver=Settings(propagation="exact"))
+```
+
+This is exact for the simulated model and needs no tolerance. A constant
+interval of any length, such as an idle delay or a rectangular pulse, costs one
+exponential. Identical intervals, as in symmetric envelopes, reuse theirs.
+
+Detuned drives stay exact: during each segment, the rotating frame of every
+exchange-connected component follows its drives' detuning, which makes the
+generator constant between sample edges. If one component has simultaneous
+drives at different frequencies, as in parallel calibrations of coupled qubits,
+that segment falls back to the adaptive solver and its tolerances.
+
+Closed systems exponentiate the `D × D` Hamiltonian, open ones the `D² × D²`
+Lindbladian. Up to dimension 256, exponentials are dense and cached. Beyond
+that, only their action on the state is computed, with sparse operators.
+
+On the two-qutrit example platform, with T1 and T2, warm 64-point sweeps of a
+3 MHz detuned Rabi and a 2 MHz detuned Ramsey took 0.8 s and 0.9 s, against 3.5 s
+and 7.5 s adaptively, on a laptop CPU. Exact results matched a strict adaptive
+reference within 1e-9; default tolerances deviated by up to 2e-6. The dynamiqs
+backend ignores this setting.
+
 ## Local process execution
 
 ```python
