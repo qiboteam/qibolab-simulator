@@ -175,6 +175,7 @@ def test_platform_execute_and_runcard(configs, experiment):
     assert platform.parameters.configs["microwave"].rabi_frequency == 12.5e6
 
 
+@pytest.mark.slow
 def test_serial_process_reproducibility(configs, experiment):
     sequence, pulse, readout = experiment
     sweeper = Sweeper(

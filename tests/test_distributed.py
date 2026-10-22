@@ -7,6 +7,7 @@ from qibolab_simulator import SimulatorController
 distributed = pytest.importorskip("distributed")
 
 
+@pytest.mark.slow
 def test_dask_executor_matches_serial(configs, experiment):
     sequence, pulse, readout = experiment
     sweeper = Sweeper(
