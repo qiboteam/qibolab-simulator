@@ -17,8 +17,8 @@ installs the notebook dependencies, and sets ``QIBOLAB_PLATFORMS`` to the
 example platforms.
 
 ``uv.lock`` records the development environment: run ``uv lock`` after changing
-dependencies, and commit it. The Dask, dynamiqs, and Qibocal tests skip when
-their optional dependencies are missing.
+dependencies, and commit it. The Dask and dynamiqs tests skip when their
+optional dependencies are missing.
 
 Documentation
 -------------
@@ -83,5 +83,6 @@ All workflows reuse `qiboteam/workflows <https://github.com/qiboteam/workflows>`
   process spawning, Dask, and dynamiqs. Coverage uploads use the
   ``codecov_token`` secret.
 - **Build wheels**: wheel and sdist, without publishing.
-- **Docs**: builds the documentation on pull requests, and deploys it to GitHub
-  Pages from ``main`` (as ``latest``) and from tags (as ``stable``).
+- **Docs**: builds the documentation, executing the calibration notebook, and
+  deploys it to GitHub Pages from ``main`` (as ``latest``) and from tags (as
+  ``stable``). A failed build keeps the previous site.
