@@ -38,10 +38,13 @@ qubits:
 .. code-block:: python
 
     from qibocal import create_calibration_platform, protocols
-    from qibocal_widgets.marimo import MarimoExecutor
+    from qibocal_widgets import Executor
+    from qibocal_widgets.marimo import Marimo
 
     platform = create_calibration_platform("qutrits")
-    executor = MarimoExecutor.create(platform=platform, path="var/report/", update=False)
+    executor = Executor.create(
+        platform=platform, path="var/report/", update=False, frontends=[Marimo()]
+    )
 
     bound = protocols.ramsey(delay=(10, 1000, 100))
     with executor:

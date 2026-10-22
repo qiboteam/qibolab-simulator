@@ -11,7 +11,8 @@ with app.setup(hide_code=True):
 
     import marimo as mo
     from qibocal import create_calibration_platform, protocols
-    from qibocal_widgets.marimo import MarimoExecutor
+    from qibocal_widgets import Executor
+    from qibocal_widgets.marimo import Marimo
 
     os.environ["QIBOLAB_PLATFORMS"] = str(
         Path(__file__).resolve().parents[1] / "examples" / "platforms"
@@ -54,7 +55,9 @@ def _():
 
     if Path(path).exists():
         shutil.rmtree(path)
-    executor = MarimoExecutor.create(platform=platform, path=path, update=False)
+    executor = Executor.create(
+        platform=platform, path=path, update=False, frontends=[Marimo()]
+    )
     return (executor,)
 
 
