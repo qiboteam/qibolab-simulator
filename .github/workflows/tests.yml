@@ -1,30 +1,63 @@
 name: Tests
 
+# Branch pushes run one job, with a sample of the slow tests (see tests/conftest.py).
+# Tags, pull requests, manual dispatches, and nightly runs on a changed main run
+# every test on the whole matrix.
 on:
   push:
+    paths-ignore:
+      - "docs/**"
+      - "notebooks/**"
+      - "**.md"
   pull_request:
   merge_group:
+  schedule:
+    - cron: "23 2 * * *"
   workflow_dispatch:
 
 permissions:
+  actions: read
   contents: read
 
 concurrency:
-  group: tests-${{ github.ref }}
+  group: tests-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  scope:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.scope.outputs.matrix }}
+      run: ${{ steps.scope.outputs.run }}
+    steps:
+      - id: scope
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == push && "$GITHUB_REF" != refs/tags/* ]]; then
+            matrix='[{"os": "ubuntu-latest", "python": "3.13"}]'
+          else
+            matrix='[{"os": "ubuntu-latest", "python": "3.11"},
+              {"os": "ubuntu-latest", "python": "3.13"},
+              {"os": "macos-latest", "python": "3.12"}]'
+          fi
+          run=true
+          if [[ "$GITHUB_EVENT_NAME" == schedule ]]; then
+            # Skip the nightly run when main has not changed since the last one.
+            last=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/tests.yml/runs?event=schedule&status=success&per_page=1" \
+              --jq '.workflow_runs[0].head_sha // ""')
+            [[ "$last" == "$GITHUB_SHA" ]] && run=false
+          fi
+          echo "matrix=$(jq -c . <<< "$matrix")" >> "$GITHUB_OUTPUT"
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+
   tests:
+    needs: scope
+    if: needs.scope.outputs.run == 'true'
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: ubuntu-latest
-            python: "3.11"
-          - os: ubuntu-latest
-            python: "3.13"
-          - os: macos-latest
-            python: "3.12"
+        include: ${{ fromJSON(needs.scope.outputs.matrix) }}
     uses: qiboteam/workflows/.github/workflows/test.yml@uv
     with:
       os: ${{ matrix.os }}

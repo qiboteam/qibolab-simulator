@@ -219,6 +219,7 @@ def test_invalid_propagation():
         Settings(propagation="euler")
 
 
+@pytest.mark.slow
 def test_qutrit_platform_sweeps():
     """Detuned natives, delay and flux-offset sweeps, through the controller."""
     from qibolab import (
@@ -250,7 +251,7 @@ def test_qutrit_platform_sweeps():
             Sweeper(
                 parameter=Parameter.duration,
                 pulses=[delay],
-                values=np.arange(0, 400, 50.0),
+                values=np.arange(0, 400, 100.0),
             )
         ],
         [
@@ -264,7 +265,7 @@ def test_qutrit_platform_sweeps():
             Sweeper(
                 parameter=Parameter.offset,
                 channels=["1/flux"],
-                values=0.582 + np.array([-0.02, 0.0, 0.02]),
+                values=0.582 + np.array([0.0, 0.02]),
             )
         ],
     ]

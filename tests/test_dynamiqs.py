@@ -100,7 +100,18 @@ CASES = {
 }
 
 
-@pytest.mark.parametrize("name", list(CASES))
+# Coupled qutrits compile large batched solvers.
+SLOW_CASES = {"qutrits", "closed-qutrits", "ramsey", "detuned qubit 1"}
+
+
+def cases(names):
+    return [
+        pytest.param(name, marks=pytest.mark.slow) if name in SLOW_CASES else name
+        for name in names
+    ]
+
+
+@pytest.mark.parametrize("name", cases(CASES))
 def test_single_problem(name):
     problem = CASES[name]
     (result,) = evolve_batch([problem], STRICT)
@@ -126,7 +137,7 @@ FOLLOW_CASES = CASES | {
 }
 
 
-@pytest.mark.parametrize("name", list(FOLLOW_CASES))
+@pytest.mark.parametrize("name", cases(FOLLOW_CASES))
 def test_frame_following_drives(name):
     problem = FOLLOW_CASES[name]
     (result,) = evolve_batch([problem], STRICT, FOLLOW)
@@ -145,6 +156,7 @@ def test_constant_detuned_drives_become_static():
     assert len(segment.terms) == 1 and not np.any(segment.frame)
 
 
+@pytest.mark.slow
 def test_spectroscopy_sweep_with_frame_following():
     frequencies = 4.8e9 + np.linspace(-20e6, 20e6, 9)
     problems = [
@@ -161,6 +173,7 @@ def test_spectroscopy_sweep_with_frame_following():
         np.testing.assert_allclose(result, evolve(*problem, REFERENCE), atol=1e-8)
 
 
+@pytest.mark.slow
 def test_mixed_batch_preserves_order():
     problems = list(CASES.values()) * 2
     results = evolve_batch(problems, STRICT)
@@ -168,6 +181,7 @@ def test_mixed_batch_preserves_order():
         np.testing.assert_allclose(result, evolve(*problem, STRICT), atol=1e-7)
 
 
+@pytest.mark.slow
 def test_sweeps_within_one_structure():
     """Amplitudes, frequencies, durations, and biases differ within each group."""
     problems = []
@@ -188,6 +202,7 @@ def test_sweeps_within_one_structure():
         np.testing.assert_allclose(result, evolve(*problem, STRICT), atol=1e-7)
 
 
+@pytest.mark.slow
 def test_single_precision():
     loose = Settings(rtol=1e-5, atol=1e-6)
     problems = [CASES["shaped"], CASES["qutrits"]]
@@ -268,6 +283,7 @@ def test_controller_backends_agree(configs, experiment, mode):
         assert np.mean(dynamiqs == qutip) > 0.999
 
 
+@pytest.mark.slow
 def test_qutrit_platform_sweeps():
     """Natives, flux-offset and delay sweeps, with dissipation and coupling."""
     from qibolab import AveragingMode, Delay, Parameter, PulseSequence, Sweeper
@@ -290,14 +306,14 @@ def test_qutrit_platform_sweeps():
             Sweeper(
                 parameter=Parameter.duration,
                 pulses=[delay],
-                values=np.arange(0, 400, 50.0),
+                values=np.arange(0, 400, 100.0),
             )
         ],
         [
             Sweeper(
                 parameter=Parameter.offset,
                 channels=["1/flux"],
-                values=0.582 + np.array([-0.02, 0.0, 0.02]),
+                values=0.582 + np.array([0.0, 0.02]),
             )
         ],
     ]
@@ -319,6 +335,7 @@ def test_batch_size_defaults():
     )
 
 
+@pytest.mark.slow
 def test_process_workers(configs, experiment):
     from qibolab import ExecutionParameters, Parameter, Sweeper
 

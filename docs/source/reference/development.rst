@@ -20,6 +20,32 @@ example platforms.
 dependencies, and commit it. The Dask and dynamiqs tests skip when their
 optional dependencies are missing.
 
+Test tiers
+----------
+
+Simulations get expensive, so the suite is split in two tiers:
+
+- **Fast**: everything not marked ``slow``. It runs on every commit, and keeps
+  the analytic, compilation, sweep, and measurement checks.
+- **Slow**: end-to-end platform sweeps, JAX compilation-heavy batches, spawned
+  processes, and Dask, marked with ``@pytest.mark.slow``.
+
+``--slow`` selects the slow tests to run: ``all`` (the default), ``none``, or a
+fraction, drawn per test from ``--slow-seed``. The test header reports the
+seed of a sampled run, to reproduce it:
+
+.. code-block:: sh
+
+    uv run pytest -n auto --slow none                    # Fast tier only
+    uv run pytest -n auto --slow 0.25 --slow-seed 1a2b3c  # A reproducible sample
+
+``poe test`` runs one worker per usable CPU, each with single-threaded
+numerical libraries, including JAX, so that workers do not compete for cores.
+
+Mark a test ``slow`` when it takes more than about a second; ``poe test``
+reports the slowest durations to spot drift. Prefer shrinking a test, e.g. to
+the fewest sweep points covering its code paths, over marking it.
+
 Documentation
 -------------
 
@@ -79,9 +105,16 @@ Continuous integration
 
 All workflows reuse `qiboteam/workflows <https://github.com/qiboteam/workflows>`_.
 
-- **Tests**: Linux on Python 3.11 and 3.13, and macOS on Python 3.12, including
-  process spawning, Dask, and dynamiqs. Coverage uploads use the
-  ``codecov_token`` secret.
+- **Tests**, in parallel, with coverage uploads using the ``codecov_token``
+  secret:
+
+  - *Branch pushes*: one Linux job, on Python 3.13, with the fast tier and a
+    quarter of the slow tests, seeded by the commit hash, so successive commits
+    exercise different ones. Changes only to documentation, Markdown, or
+    notebooks skip the tests.
+  - *Tags, pull requests, manual dispatches, and nightly runs*: every test,
+    on Linux with Python 3.11 and 3.13, and on macOS with Python 3.12. The
+    nightly run is skipped when ``main`` has not changed since the last one.
 - **Build wheels**: wheel and sdist, without publishing.
 - **Docs**: builds the documentation, executing the calibration notebook, and
   deploys it to GitHub Pages from ``main`` (as ``latest``) and from tags (as
