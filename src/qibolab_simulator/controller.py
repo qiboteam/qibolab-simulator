@@ -22,7 +22,7 @@ from qibolab._core.sweeper import ParallelSweepers
 from threadpoolctl import threadpool_limits
 
 from .engine import DynamiqsSettings, Settings, evolve
-from .execution import batches, bounded_map
+from .execution import batches, bounded_map, grouped_batches
 from .sequence import Experiment, compile_sequence
 from .sweep import points, sweep_shape
 
@@ -32,6 +32,15 @@ class _Job:
     coordinate: tuple[int, ...]
     sequence_index: int
     experiment: Experiment
+
+
+# Batches of sweep points gathered at once by structure, bounding compiled jobs.
+_GROUPING_WINDOW = 8
+
+
+def _structure(job: _Job, *, structure, options: DynamiqsSettings) -> tuple:
+    exp = job.experiment
+    return structure((exp.model, exp.drives, exp.fluxes, exp.duration), options)
 
 
 def _measure(
@@ -112,7 +121,8 @@ class SimulatorController(Controller):
     """Rotating-frame controller; one worker by default.
 
     ``backend`` selects QuTiP or dynamiqs, which batches each submitted batch of
-    experiments on a CPU, GPU, or TPU. Both share every other setting.
+    experiments on a CPU, GPU, or TPU, gathering equally structured sweep points
+    first. Both share every other setting.
     ``executor`` can be a caller-owned Dask ``Client.get_executor()``.
     Use process workers with one execution thread each, not shared-thread solvers.
     """
@@ -223,7 +233,22 @@ class SimulatorController(Controller):
         if owned:
             self.connect()
         executor = self.executor if self.executor is not None else self._pool
-        tasks = batches(jobs(), self.effective_batch_size)
+        size = self.effective_batch_size
+        if self.backend == "dynamiqs":
+            # Imported on demand: dynamiqs is an optional dependency.
+            from .dynamiqs_engine import structure
+
+            # Sweep order is free: results return to their coordinates, and each
+            # point's shots are seeded by them. Gather equally structured points,
+            # which dynamiqs solves together, across the sweep's axes.
+            tasks = grouped_batches(
+                jobs(),
+                size,
+                partial(_structure, structure=structure, options=self.dynamiqs),
+                _GROUPING_WINDOW * size,
+            )
+        else:
+            tasks = batches(jobs(), size)
         completed = (
             map(run, tasks)
             if executor is None

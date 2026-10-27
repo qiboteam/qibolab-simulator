@@ -6,13 +6,19 @@ groups them in batches, and solves the batches in the calling process, on
 local worker processes, or on a caller-managed executor such as a Dask
 cluster.
 
-Start with one worker
----------------------
+Workers
+-------
 
-``SimulatorController()`` uses one worker, in the calling process. This is the
-recommended baseline on a laptop: worker startup, serialization, and
-scheduling may cost more than they save on a small calibration. Measure the
-crossover on your experiments, with the end-to-end benchmark:
+``SimulatorController()`` uses one worker, in the calling process, which keeps
+a laptop responsive while it runs a notebook. **On a multicore machine, use
+more**: QuTiP sweeps scale almost linearly with process workers. In the
+`GPU benchmark
+<https://github.com/qiboteam/qibolab-simulator/blob/main/benchmarks/dynamiqs/README.md>`_,
+32 processes ran Rabi and chevron sweeps 18 and 20 times faster than one.
+
+On a small calibration, worker startup, serialization, and scheduling may cost
+more than they save. Measure the crossover on your experiments, with the
+end-to-end benchmark:
 
 .. code-block:: sh
 

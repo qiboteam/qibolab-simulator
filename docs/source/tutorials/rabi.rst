@@ -71,16 +71,18 @@ controller's ``seed`` makes the draws reproducible:
     )
     results[readout.id].shape  # (1000, 21)
 
-Exact propagation
------------------
+Faster sweeps
+-------------
 
-By default, the QuTiP backend integrates the dynamics adaptively. Evolving each
-pulse sample with one matrix exponential is usually faster and more accurate:
+The QuTiP backend evolves each pulse sample with one matrix exponential, which
+is exact for the model. Sweep points are independent, so on a multicore machine
+they can run on several processes:
 
 .. code-block:: python
 
-    from qibolab_simulator import Settings
+    if __name__ == "__main__":  # Workers are spawned processes.
+        platform = create_platform(workers=8)
 
-    platform.instruments["simulator"].solver = Settings(propagation="exact")
-
-See :doc:`../guides/solvers` for the trade-offs.
+``create_platform`` passes ``workers`` to the controller. Keep the default
+single worker on a laptop you are working on. See
+:doc:`../guides/solvers` and :doc:`../guides/parallel`.

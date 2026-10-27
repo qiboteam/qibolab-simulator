@@ -205,7 +205,8 @@ def test_sweeps_within_one_structure():
 @pytest.mark.slow
 def test_single_precision():
     loose = Settings(rtol=1e-5, atol=1e-6)
-    problems = [CASES["shaped"], CASES["qutrits"]]
+    # Damped multi-segment cases chain density matrices across segments.
+    problems = [CASES["shaped"], CASES["qutrits"], CASES["ramsey"], CASES["phases"]]
     results = evolve_batch(problems, loose, DynamiqsSettings(precision="single"))
     for problem, result in zip(problems, results, strict=True):
         assert result.dtype == np.float64
@@ -237,12 +238,14 @@ def test_bucket():
     assert [_bucket(n) for n in (0, 1, 2, 3, 4, 5, 1000)] == [1, 1, 2, 4, 4, 8, 1024]
 
 
-def play(backend, configs, sequences, sweepers, **kwargs):
+def play(backend, configs, sequences, sweepers, batch_size=None, **kwargs):
     from qibolab import ExecutionParameters
 
     from qibolab_simulator import SimulatorController
 
-    controller = SimulatorController(seed=17, backend=backend, solver=STRICT)
+    controller = SimulatorController(
+        seed=17, backend=backend, solver=STRICT, batch_size=batch_size
+    )
     options = ExecutionParameters(**kwargs)
     return controller.play(configs, sequences, options, sweepers)
 
@@ -284,6 +287,58 @@ def test_controller_backends_agree(configs, experiment, mode):
 
 
 @pytest.mark.slow
+@pytest.mark.slow
+def test_controller_groups_structures_across_sweep(configs, monkeypatch):
+    """Duration is the inner axis: groups gather across it, results stay in place."""
+    from qibolab import (
+        Acquisition,
+        AveragingMode,
+        Gaussian,
+        Parameter,
+        Pulse,
+        PulseSequence,
+        Sweeper,
+    )
+
+    from qibolab_simulator import dynamiqs_engine
+
+    pulse = Pulse(duration=40, amplitude=1, envelope=Gaussian(rel_sigma=0.2))
+    readout = Acquisition(duration=100)
+    sequence = PulseSequence([("microwave", pulse)])
+    sequence.align(["microwave", "detector"])
+    sequence.append(("detector", readout))
+    sweepers = [
+        [
+            Sweeper(
+                parameter=Parameter.amplitude,
+                pulses=[pulse],
+                values=np.linspace(0.25, 1, 4),  # Zero amplitude has its own structure.
+            )
+        ],
+        [
+            Sweeper(
+                parameter=Parameter.duration,
+                pulses=[pulse],
+                values=np.array([20.0, 40.0]),
+            )
+        ],
+    ]
+    keys = []
+    solve = dynamiqs_engine.evolve_batch
+
+    def recorded(problems, *args):
+        keys.append({dynamiqs_engine.structure(p) for p in problems})
+        return solve(problems, *args)
+
+    monkeypatch.setattr(dynamiqs_engine, "evolve_batch", recorded)
+    kwargs = dict(averaging_mode=AveragingMode.CYCLIC, batch_size=4)
+    dynamiqs = play("dynamiqs", configs, [sequence], sweepers, **kwargs)[readout.id]
+    # Each duration forms its own structure, and fills one batch.
+    assert [len(k) for k in keys] == [1, 1]
+    qutip = play("qutip", configs, [sequence], sweepers, **kwargs)[readout.id]
+    np.testing.assert_allclose(dynamiqs, qutip, atol=1e-7)
+
+
 def test_qutrit_platform_sweeps():
     """Natives, flux-offset and delay sweeps, with dissipation and coupling."""
     from qibolab import AveragingMode, Delay, Parameter, PulseSequence, Sweeper

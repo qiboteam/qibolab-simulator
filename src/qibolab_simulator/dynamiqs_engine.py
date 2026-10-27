@@ -153,6 +153,14 @@ def _key(model: Model, problem_segments: list[_Segment]) -> tuple:
     )
 
 
+def structure(problem: Problem, options: DynamiqsSettings = _DEFAULT_OPTIONS) -> tuple:
+    """The key of the batches ``problem`` can join: equal keys solve together."""
+    validate(*problem, _DEFAULT_SETTINGS)
+    model, drives, fluxes, duration = problem
+    follow = options.frame == "drives"
+    return _key(model, _segments(model, drives, fluxes, duration, follow))
+
+
 def _samples_at(tau, origin, start, duration, count, samples, s):
     """Zero-order hold at rescaled time ``s``; arrays may carry a batch axis.
 
@@ -329,6 +337,18 @@ def _solve_group(
         if shifted:
             end = (origin + tau)[:, None]
             state = _rotate(state, np.exp(-1j * end * frame), dissipative)
+        if dissipative:
+            # Rounding, notably in single precision, breaks hermiticity, which
+            # dynamiqs checks on the initial state of the next segment.
+            state = (state + jnp.conj(jnp.swapaxes(state, -1, -2))) / 2
+        if options.precision == "single":
+            # The evolution preserves the trace, or the norm, which float32
+            # rounding lets drift by about 1e-4 over long delays.
+            if dissipative:
+                trace = jnp.trace(state, axis1=-2, axis2=-1).real
+                state = state / trace[:, None, None]
+            else:
+                state = state / jnp.linalg.norm(state, axis=(-2, -1))[:, None, None]
     final = np.asarray(state, dtype=np.complex128)[:size]
     if dissipative:
         return np.diagonal(final, axis1=-2, axis2=-1)

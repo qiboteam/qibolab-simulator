@@ -72,4 +72,10 @@ Results are keyed by acquisition identifier. Averaged discrimination returns
 the exact probability of leaving the ground state; single-shot modes sample
 outcomes from it. See :doc:`../guides/experiments` for every acquisition mode.
 
+.. tip::
+
+    The controller uses a single worker by default. On a multicore machine,
+    ``SimulatorController(workers=...)`` runs sweep points on several
+    processes, which is much faster: see :doc:`../guides/parallel`.
+
 Next, sweep the pulse amplitude in :doc:`../tutorials/rabi`.

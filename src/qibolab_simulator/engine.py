@@ -160,9 +160,10 @@ class Flux:
 class Settings:
     """Solver accuracy, shared by the QuTiP and dynamiqs backends.
 
-    ``propagation="exact"`` makes the QuTiP backend exponentiate every interval
-    between sample edges, instead of integrating adaptively; tolerances then only
-    apply to segments falling back to the adaptive solver. dynamiqs ignores it.
+    By default, the QuTiP backend exponentiates every interval between sample
+    edges, so tolerances only apply to segments falling back to its adaptive
+    solver, and to dynamiqs. ``propagation="adaptive"`` integrates every segment
+    adaptively instead. dynamiqs ignores ``propagation``.
     """
 
     rtol: float = 1e-7
@@ -171,7 +172,7 @@ class Settings:
     """Absolute tolerance of adaptive solvers."""
     nsteps: int = 100000
     """Maximum number of steps of adaptive solvers, per segment."""
-    propagation: Literal["adaptive", "exact"] = "adaptive"
+    propagation: Literal["adaptive", "exact"] = "exact"
     """Propagation strategy of the QuTiP backend."""
 
     def __post_init__(self) -> None:
@@ -516,11 +517,11 @@ def evolve(
 ) -> NDArray[np.float64]:
     """Return terminal joint basis probabilities, with the last subsystem fastest.
 
-    All pulse boundaries restart integration. Changing sample sequences additionally
-    constrain the adaptive step, but constant envelopes and idle intervals do not.
-    Closed, diagonal autonomous segments apply exact phases without integration.
-    Exact propagation exponentiates the other segments, unless a component has
-    drives with different detunings. Only the terminal state is retained; adaptive
+    Pulse boundaries split the evolution into segments. Closed, diagonal autonomous
+    segments apply exact phases. Exact propagation, the default, exponentiates the
+    other segments, unless a component has drives with different detunings; those,
+    or every segment with adaptive propagation, are integrated, with changing sample
+    sequences constraining the step. Only the terminal state is retained; adaptive
     and large exact propagation never make operators dense arrays.
     """
     validate(model, drives, fluxes, duration, settings)

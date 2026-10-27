@@ -2,7 +2,7 @@ from concurrent.futures import Future
 
 import pytest
 
-from qibolab_simulator.execution import batches, bounded_map
+from qibolab_simulator.execution import batches, bounded_map, grouped_batches
 
 
 class Executor:
@@ -67,3 +67,18 @@ def test_slow_first_task_does_not_block_completed_results():
     assert next(iterator) == 1
     iterator.close()
     assert executor.futures[0].cancelled()
+
+
+def test_grouped_batches():
+    items = [(i % 3, i) for i in range(12)]
+    grouped = list(grouped_batches(items, 4, key=lambda x: x[0], window=6))
+    # Each window of six is regrouped, without crossing into the next one.
+    assert [[k for k, _ in b] for b in grouped] == [
+        [0, 0, 1, 1],
+        [2, 2],
+        [0, 0, 1, 1],
+        [2, 2],
+    ]
+    assert sorted((i for b in grouped for i in b), key=lambda x: x[1]) == items
+    with pytest.raises(ValueError):
+        list(grouped_batches(items, 4, key=lambda x: x, window=0))

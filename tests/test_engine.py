@@ -20,7 +20,8 @@ from qibolab_simulator.engine import (
 )
 
 FREQUENCY = 5e9
-STRICT = Settings(rtol=1e-9, atol=1e-11)
+# The adaptive solver; tests/test_exact.py checks the default, exact propagation.
+STRICT = Settings(rtol=1e-9, atol=1e-11, propagation="adaptive")
 
 
 def rotation(angle, *, start=0, duration=20, phase=0, frequency=FREQUENCY, target=0):
@@ -337,7 +338,13 @@ def test_invalid_solver_probabilities(monkeypatch, diagonal):
 
     monkeypatch.setattr(qt, "mesolve", invalid)
     with pytest.raises(RuntimeError, match="probabilities"):
-        evolve(Model((Qubit(FREQUENCY, t1=100),)), (), (), 1)
+        evolve(
+            Model((Qubit(FREQUENCY, t1=100),)),
+            (),
+            (),
+            1,
+            Settings(propagation="adaptive"),
+        )
 
 
 @pytest.mark.parametrize(

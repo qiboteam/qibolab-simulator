@@ -81,15 +81,9 @@ each, the density matrix is 9 × 9.
 Faster sweeps
 -------------
 
-This sweep takes about 15 s with the default adaptive solver on a laptop CPU.
-Exact propagation, which exponentiates each pulse sample, runs it in about
-1.5 s:
-
-.. code-block:: python
-
-    from qibolab_simulator import Settings
-
-    platform.instruments["simulator"].solver = Settings(propagation="exact")
+On a laptop CPU, this sweep takes about 1.5 s with the default exact
+propagation, which exponentiates each pulse sample, and about 15 s with
+QuTiP's adaptive solver (``Settings(propagation="adaptive")``).
 
 Independent sweep points can also run on several processes, or as a single
 batch on a GPU. See :doc:`../guides/solvers` and :doc:`../guides/parallel`.
